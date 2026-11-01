@@ -71,12 +71,14 @@ def tp_prices(entry, S=None):
 def open_trade(sig, opt, date, mode="PAPER", S=None):
     """
     नवीन कागदी ट्रेड उघडा.
-    sig = {side, or_high, or_low, breakout, time...}, opt = {key, strike, expiry, ltp}
+    sig = {side, or_high, or_low, breakout, time...},
+    opt = {key, strike, expiry, ltp, lot?}
     S = सिम्बॉल config (None = BANKNIFTY)
+    qty = ऑप्शनचा खरा lot (opt["lot"]) — MCX साठी फाईलमधून; नसेल तर S["lot"]
     यशास → (trade_dict, ""), अपयशास → (None, कारण)
     """
     S = S or _BN()
-    qty = S["lot"]
+    qty = int(opt.get("lot") or S["lot"])
     entry = round(opt["ltp"] * (1 + SLIPPAGE), 2)
     cost = entry * qty
     if cost > _capital(S) * 0.90:

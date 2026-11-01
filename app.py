@@ -86,7 +86,7 @@ def eval_payload(date=None):
     m_wins = sum(1 for t in mt_closed if (t["pnl"] or 0) >= 0)
     m_losses = len(mt_closed) - m_wins
 
-    return {
+    data = {
         "ok": True,
         "generated_at": n.strftime("%Y-%m-%d %H:%M:%S IST"),
         "date": date,
@@ -134,14 +134,18 @@ def eval_payload(date=None):
             "capital": CAPITAL, "square_off": SQUARE_OFF,
             "market_open": MARKET_OPEN, "market_close": MARKET_CLOSE,
         },
-        "copper": _copper_payload(date),
     }
+    # सर्व MCX सिम्बॉल्सचे स्वतंत्र ब्लॉक: copper / gold / silver / crude / natgas
+    for s in C.SYMBOLS:
+        if s["mcx"]:
+            data[s["key"].lower()] = _sym_payload(s, date)
+    return data
 
 
-def _copper_payload(date):
-    """COPPER चा /api/eval ब्लॉक — स्वतंत्र भांडवल/नियम/आकडे"""
-    S = C.COPPER
-    if S["key"] not in [s["key"] for s in C.active_symbols()]:
+def _sym_payload(S, date):
+    """एका MCX सिम्बॉलचा /api/eval ब्लॉक — स्वतंत्र भांडवल/नियम/आकडे"""
+    skey = S["key"]
+    if skey not in [s["key"] for s in C.active_symbols()]:
         return {"enabled": False}
 
     def _trades_for(rows):
@@ -175,12 +179,12 @@ def _copper_payload(date):
             })
         return out, wins_, losses_
 
-    rows = store.trades_today(date, "COPPER")
+    rows = store.trades_today(date, skey)
     ctrades, c_wins, c_losses = _trades_for(rows)
     c_closed = [t for t in ctrades if t["status"] == "CLOSED"]
 
     # महिना आकडे कच्च्या rows वरून (eval-आकार नाही)
-    mts = store.month_trades(date[:7], "COPPER")
+    mts = store.month_trades(date[:7], skey)
     mt_raw = [t for t in mts if t["status"] == "CLOSED"]
     m_wins = sum(1 for t in mt_raw if (t["pnl"] or 0) >= 0)
     m_losses = len(mt_raw) - m_wins
@@ -188,8 +192,8 @@ def _copper_payload(date):
     return {
         "enabled": True,
         "flags": {
-            "daily_halt": store.get_state("halt_" + date + "_COPPER") == "1",
-            "last_skip_note": store.get_state("blockednote_" + date + "_COPPER"),
+            "daily_halt": store.get_state("halt_" + date + "_" + skey) == "1",
+            "last_skip_note": store.get_state("blockednote_" + date + "_" + skey),
         },
         "trades": ctrades,
         "summary": {
@@ -199,9 +203,9 @@ def _copper_payload(date):
             "wins": c_wins, "losses": c_losses,
             "win_rate_pct": round(100.0 * c_wins / (c_wins + c_losses), 1)
                             if (c_wins + c_losses) else None,
-            "day_pnl_net": store.today_pnl(date, "COPPER"),
-            "day_charges": store.today_charges(date, "COPPER"),
-            "total_pnl_net": store.total_pnl_symbol("COPPER"),
+            "day_pnl_net": store.today_pnl(date, skey),
+            "day_charges": store.today_charges(date, skey),
+            "total_pnl_net": store.total_pnl_symbol(skey),
         },
         "month": {
             "month": date[:7],
@@ -235,10 +239,9 @@ def dashboard():
         badges.append("🚨KILL")
     if store.get_state("paused") == "1":
         badges.append("⏸पॉज")
-    if store.get_state("halt_" + date + "_BANKNIFTY") == "1":
-        badges.append("🛑मर्यादाBN")
-    if store.get_state("halt_" + date + "_COPPER") == "1":
-        badges.append("🛑मर्यादाCU")
+    for s in C.SYMBOLS:
+        if store.get_state("halt_" + date + "_" + s["key"]) == "1":
+            badges.append("🛑" + s["short"])
     mode_txt = mode + (" " + " ".join(badges) if badges else "")
 
     tok = "✅ आहे" if store.get_state("upstox_token") else "❌ नाही (Telegram वर /code पाठवा)"
@@ -267,28 +270,39 @@ def dashboard():
     if not rows:
         rows = [["—", "—", "—", "—", "—", "—", "—", "—", "अजून ट्रेड नाही"]]
 
+    day_pnl = " | ".join(
+        f"{s['short']} ₹{store.today_pnl(date, s['key']):,.0f}"
+        for s in C.active_symbols())
     return (mode_txt,
-            f"BN {_market_open()} | CU {_mcx_open()}", tok,
-            f"BN ₹{store.today_pnl(date, 'BANKNIFTY'):,.0f} | "
-            f"CU ₹{store.today_pnl(date, 'COPPER'):,.0f}",
+            f"BN {_market_open()} | MCX {_mcx_open()}", tok,
+            day_pnl,
             f"₹{store.total_pnl():,.0f}",
             pos_txt, rows)
 
 
-with gr.Blocks(title="BankNifty AI Bot") as demo:
+_cap_txt = " + ".join(
+    (f"BANKNIFTY (₹{C.CAPITAL:,.0f})" if s["key"] == "BANKNIFTY"
+     else f"{s['short']} (₹{s['capital']:,.0f})")
+    for s in C.SYMBOLS)
+_halt_txt = " / ".join(
+    (f"₹{C.MAX_DAILY_LOSS:,.0f} (BN)" if s["key"] == "BANKNIFTY"
+     else f"₹{s['max_daily_loss']:,.0f} ({s['short']})")
+    for s in C.SYMBOLS)
+
+with gr.Blocks(title="BankNifty + MCX AI Bot") as demo:
     gr.Markdown(
-        "# 🤖 BankNifty + Copper AI Trading Bot\n"
+        "# 🤖 BankNifty + MCX AI Trading Bot (6 सिम्बॉल्स)\n"
         "**PAPER mode** — कागदी ट्रेडिंग (पैसे धोक्यात नाही). "
         "संपूर्ण नियंत्रण तुमच्या Telegram बॉटवर.\n\n"
-        f"BANKNIFTY (₹{C.CAPITAL:,.0f}) + COPPER (₹{C.CU_CAPITAL:,.0f} स्वतंत्र) | "
+        f"{_cap_txt} — सर्व स्वतंत्र भांडवल | "
         f"ORB | SL: -{C.SL_PCT:.0f}% | टार्गेट: +{C.TARGET_PCT:.0f}% | "
-        f"दैनिक तोटा मर्यादा: ₹{C.MAX_DAILY_LOSS:,.0f} (BN) / ₹{C.CU_MAX_DAILY_LOSS:,.0f} (CU)")
+        f"दैनिक तोटा मर्यादा: {_halt_txt}")
     with gr.Row():
         m_mode = gr.Textbox(label="मोड", interactive=False)
         m_mkt = gr.Textbox(label="बाजार (BN | MCX)", interactive=False)
         m_tok = gr.Textbox(label="Upstox टोकन", interactive=False)
     with gr.Row():
-        m_day = gr.Textbox(label="आजचा P&L (BN | CU)", interactive=False)
+        m_day = gr.Textbox(label="आजचा P&L (सर्व सिम्बॉल्स)", interactive=False)
         m_tot = gr.Textbox(label="सुरुवातीपासून P&L (एकूण)", interactive=False)
         m_pos = gr.Textbox(label="उघड्या पोझिशन्स", interactive=False)
     tbl = gr.DataFrame(

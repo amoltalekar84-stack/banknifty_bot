@@ -131,9 +131,68 @@ COPPER = {
     "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT, "tp3_pct": TP3_PCT,
     "ladder": False,          # 1 lot (2500) — भागाकार बुकिंग शक्य नाही
     "mcx": True,
+    "commodity": "COPPER",                  # Upstox फाईलमधले खरे नाव
+    "ts_pattern": r"^COPPER\d",             # फक्त main series
+    "trade_lot": None,                      # ऑप्शनचा lot फाईलमधून
     "min_candles": 31,        # OR रेंज 9:15–9:45 = 30 कॅन्डल + 1
     "summary_at": "23:10",    # Copper दैनिक अहवाल — स्क्वेअर-ऑफ नंतर
 }
+
+# ----------------------------------------------------------------
+# 7.6 GOLD / SILVER / NATURAL GAS / CRUDE — प्रत्येकी स्वतंत्र भांडवल
+#     तत्त्व Copper प्रमाणेच: 1 लॉट → +20% breakeven लॉक, +40% पूर्ण बुकिंग.
+#     लॉट/कॉन्ट्रॅक्ट रोज Upstox instruments फाईलमधून (main series);
+#     खालील lot फक्त fallback.
+#     GOLD ऑप्शन: 1 kg = 100 × 10g, प्रीमियम प्रति 10 g (MCX स्पेक)
+#     → trade_lot = 100; म्हणून भांडवलही त्याच प्रमाणात.
+# ----------------------------------------------------------------
+
+def _mcx_symbol(key, label, short, commodity, ts_pattern, capital,
+                max_daily_loss, lot, trade_lot=None, summary_at="23:10"):
+    return {
+        "key": key, "label": label, "short": short, "seg": "MCX",
+        "lot": lot,
+        "capital": capital, "capital_state": "capital_" + key,
+        "max_trades": 2, "max_daily_loss": max_daily_loss,
+        "orb_start": CU_ORB_START, "orb_end": CU_ORB_END,
+        "entry_start": CU_ENTRY_START, "entry_end": CU_ENTRY_END,
+        "square_off": CU_SQUARE_OFF,
+        "square_off_label": "वेळ एग्झिट (23:05)",
+        "market_open": CU_MARKET_OPEN, "market_close": CU_MARKET_CLOSE,
+        "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT,
+        "tp3_pct": TP3_PCT,
+        "ladder": False,          # 1 लॉट — भागाकार बुकिंग शक्य नाही
+        "mcx": True,
+        "commodity": commodity, "ts_pattern": ts_pattern,
+        "trade_lot": trade_lot,
+        "min_candles": 31,
+        "summary_at": summary_at,
+    }
+
+GOLD = _mcx_symbol(
+    "GOLD", "GOLD (MCX)", "GOLD", "GOLD", r"^GOLD\d",
+    capital=_f("GOLD_CAPITAL", 800000.0),
+    max_daily_loss=_f("GOLD_MAX_DAILY_LOSS", 40000.0),   # 5% of ₹8L
+    lot=100, trade_lot=100,           # ऑप्शन 1 kg = 100 × 10g
+    summary_at="23:12")
+
+SILVER = _mcx_symbol(
+    "SILVER", "SILVER (MCX)", "SILVER", "SILVER", r"^SILVER(?!100)\d",
+    capital=_f("SILVER_CAPITAL", 500000.0),
+    max_daily_loss=_f("SILVER_MAX_DAILY_LOSS", 25000.0),  # 5% of ₹5L
+    lot=30, summary_at="23:14")
+
+CRUDE = _mcx_symbol(
+    "CRUDE", "CRUDE (MCX)", "CRUDE", "CRUDE OIL", r"^CRUDEOIL\d",
+    capital=_f("CRUDE_CAPITAL", 200000.0),
+    max_daily_loss=_f("CRUDE_MAX_DAILY_LOSS", 10000.0),   # 5% of ₹2L
+    lot=100, summary_at="23:16")
+
+NATGAS = _mcx_symbol(
+    "NATGAS", "NATGAS (MCX)", "NG", "NATURALGAS", r"^NATURALGAS\d",
+    capital=_f("NG_CAPITAL", 100000.0),
+    max_daily_loss=_f("NG_MAX_DAILY_LOSS", 5000.0),       # 5% of ₹1L
+    lot=1250, summary_at="23:18")
 
 BANKNIFTY = {
     "key": "BANKNIFTY",
@@ -158,10 +217,17 @@ BANKNIFTY = {
 }
 
 # इंजिन या क्रमाने प्रत्येक सिम्बॉल चालवते
-SYMBOLS = [BANKNIFTY, COPPER]
+SYMBOLS = [BANKNIFTY, COPPER, GOLD, SILVER, CRUDE, NATGAS]
 
-# Copper पूर्णपणे बंद करायचं असल्यास env मध्ये ENABLE_COPPER=NO
-ENABLE_COPPER = os.getenv("ENABLE_COPPER", "YES").strip().upper() != "NO"
+# प्रत्येक सिम्बॉल स्वतंत्र बंद करता येतो (env मध्ये ENABLE_<SYMBOL>=NO)
+_ENABLERS = {
+    "BANKNIFTY": True,
+    "COPPER": os.getenv("ENABLE_COPPER", "YES").strip().upper() != "NO",
+    "GOLD": os.getenv("ENABLE_GOLD", "YES").strip().upper() != "NO",
+    "SILVER": os.getenv("ENABLE_SILVER", "YES").strip().upper() != "NO",
+    "CRUDE": os.getenv("ENABLE_CRUDE", "YES").strip().upper() != "NO",
+    "NATGAS": os.getenv("ENABLE_NATGAS", "YES").strip().upper() != "NO",
+}
 
 # ---------------------------------------------------------------
 # 8. इंजिन
@@ -174,8 +240,8 @@ MODE = os.getenv("TRADING_MODE", "PAPER").strip().upper()
 
 
 def active_symbols():
-    """चालू करण्यायोग्य सिम्बॉल्स (ENABLE_COPPER=NO असल्यास फक्त BANKNIFTY)"""
-    return [s for s in SYMBOLS if (s["key"] != "COPPER" or ENABLE_COPPER)]
+    """चालू करण्यायोग्य सिम्बॉल्स (ENABLE_<SYM>=NO असल्यास तो वगळला)"""
+    return [s for s in SYMBOLS if _ENABLERS.get(s["key"], True)]
 
 
 def ist_now():

@@ -46,6 +46,11 @@ HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 /mode live — प्रत्यक्ष पैशांचा मोड (कुलूपबंद)
 /setcapital 50000 — BANKNIFTY भांडवल बदला
 /setcapitalcu 200000 — COPPER भांडवल बदला
+/setcapitalgold 800000 — GOLD भांडवल बदला
+/setcapitalsilver 500000 — SILVER भांडवल बदला
+/setcapitalcrude 200000 — CRUDE भांडवल बदला
+/setcapitalng 100000 — NATGAS भांडवल बदला
+(सर्व भांडवले स्वतंत्र — एकमेकांना स्पर्श नाहीत)
 /backtest 30 — जुन्या डेटावर धोरणाची चाचणी (सर्व खर्चांसह) 🧪
 /help — हे मेनू"""
 
@@ -225,7 +230,7 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"आजचा निव्वल: ₹{store.today_pnl(date, S['key']):,.0f}\n"
             f"  पोझिशन: {pos_txt} | सुरुवातीपासून: "
             f"₹{store.total_pnl_symbol(S['key']):,.0f}")
-    lines.append(f"\nएकूण (दोन्ही) निव्वल P&L: ₹{store.total_pnl():,.0f} "
+    lines.append(f"\nएकूण (सर्व सिम्बॉल्स) निव्वल P&L: ₹{store.total_pnl():,.0f} "
                  f"(खर्च ₹{store.total_charges():,.0f})")
     await update.effective_message.reply_text("\n".join(lines))
 
@@ -414,6 +419,37 @@ async def cmd_setcapitalcu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("अवैध रक्कम — उदा. /setcapitalcu 200000")
 
 
+def _mk_cap_cmd(S):
+    """MCX सिम्बॉलसाठी /setcapital<सिम्बॉल> हँडलर तयार करा (स्वतंत्र भांडवल)"""
+    cmd = "setcapital" + S["short"].lower()
+
+    async def _cap(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+        e = _guard(update.effective_chat.id)
+        if e:
+            await update.effective_message.reply_text(e)
+            return
+        if not ctx.args:
+            await update.effective_message.reply_text(
+                f"वापर: /{cmd} {int(S['capital'])}\n"
+                f"({S['label']} स्वतंत्र भांडवल; डीफॉल्ट ₹{S['capital']:,.0f} — "
+                f"दैनिक तोटा मर्यादा 5% = ₹{S['max_daily_loss']:,.0f})")
+            return
+        try:
+            val = float(ctx.args[0].replace(",", ""))
+            if val < 50000:
+                raise ValueError
+            store.set_state(S["capital_state"], str(val))
+            await update.effective_message.reply_text(
+                f"✅ {S['label']} भांडवल ₹{val:,.0f} सेट झाले "
+                "(स्वतंत्र — इतर सिम्बॉल्सना स्पर्श नाही).")
+        except ValueError:
+            await update.effective_message.reply_text(
+                f"अवैध रक्कम — उदा. /{cmd} {int(S['capital'])}")
+
+    _cap.__name__ = "cmd_" + cmd
+    return _cap
+
+
 async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/backtest [दिवस] — ORB धोरण जुन्या खऱ्या डेटावर चालवा (सर्व खर्चांसह)"""
     e = _guard(update.effective_chat.id)
@@ -516,6 +552,10 @@ async def _serve():
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("setcapital", cmd_setcapital))
     app.add_handler(CommandHandler("setcapitalcu", cmd_setcapitalcu))
+    for _S in C.SYMBOLS:
+        if _S["mcx"] and _S["key"] != "COPPER":
+            app.add_handler(CommandHandler(
+                "setcapital" + _S["short"].lower(), _mk_cap_cmd(_S)))
     app.add_handler(CommandHandler("backtest", cmd_backtest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 

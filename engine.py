@@ -1,17 +1,20 @@
 """
-मुख्य ट्रेडिंग इंजिन — स्वयंचलित लूप (MULTI-SYMBOL: BANKNIFTY + COPPER).
+मुख्य ट्रेडिंग इंजिन — स्वयंचलित लूप (MULTI-SYMBOL: BANKNIFTY + 5 MCX).
 
 प्रवाह (प्रत्येक POLL_SEC सेकंदांनी, सिम्बॉल-प्रमाणे):
-  ① बाजार वेळ तपासा (BN: सोम–शुक्र 9:15–15:30 | CU: सोम–शुक्र 9:00–23:30)
+  ① बाजार वेळ तपासा (BN: सोम–शुक्र 9:15–15:30 | MCX: सोम–शुक्र 9:00–23:30)
   ② टोकन आहे का? → नाही तर Telegram वर पाठवा
   ③ पोझिशन उघडी असल्यास तिचे निरीक्षण करा (SL/टार्गेट/ट्रेल/वेळ)
   ④ उघडी नसल्यास ORB सिग्नल तपासा → ATM ऑप्शन निवडा → एंट्री
-  ⑤ BN 15:05 ला / CU 23:05 ला जबरदस्ती स्क्वेअर-ऑफ
-  ⑥ BN 15:20 ला / CU 23:10 ला दैनिक अहवाल
+  ⑤ BN 15:05 ला / MCX 23:05 ला जबरदस्ती स्क्वेअर-ऑफ
+  ⑥ दैनिक अहवाल: BN 15:20 | CU 23:10 | GOLD 23:12 | SILVER 23:14 |
+     CRUDE 23:16 | NATGAS 23:18
 
-BANKNIFTY: जुनेच नियम — TP लॅडर 10+10+10 (लॉट 30).
-COPPER: स्वतंत्र भांडवल ₹2L | 1 लॉट (2500 kg) असल्याने भागाकार शक्य नाही →
+BANKNIFTY: जुनेच नियम — TP लॅडर 10+10+10 (लॉट 30), ₹50,000 भांडवल.
+MCX (Copper/Gold/Silver/Crude/NatGas): प्रत्येकी स्वतंत्र भांडवल, 1 लॉट →
   +20% → SL breakeven लॉक | +40% → पूर्ण बुकिंग | SL −20% | 23:05 स्क्वेअर-ऑफ.
+  कॉन्ट्रॅक्ट रोज Upstox instruments फाईलमधून (फक्त main series) आपोआप;
+  ऑप्शनचा खरा lot त्याच फाईलमधून (GOLD: 1 kg = 100 × 10g config ओव्हरराईड).
 """
 
 import threading
@@ -59,12 +62,13 @@ def start_engine():
 def _loop():
     from telegram_bot import notify
     syms = " + ".join(s["label"] for s in C.active_symbols())
+    times = " | ".join(f"{s['market_open']}–{s['market_close']} ({s['short']})"
+                        for s in C.active_symbols())
     notify(f"🤖 बॉट सुरू झाला — मोड: {store.get_state('mode', 'PAPER')}\n"
            f"सिम्बॉल्स: {syms}\n"
            f"मोड: ORB | SL: -{C.SL_PCT:.0f}% | TP लॅडर: +{C.TP1_PCT:.0f}% / "
            f"+{C.TARGET_PCT:.0f}% / +{C.TP3_PCT:.0f}% (भागाकार बुकिंग)\n"
-           f"बाजार वेळ: {C.MARKET_OPEN}–{C.MARKET_CLOSE} IST (BANKNIFTY) | "
-           f"{C.CU_MARKET_OPEN}–{C.CU_MARKET_CLOSE} IST (COPPER)")
+           f"बाजार वेळ: {times} IST")
     while True:
         try:
             _tick()
@@ -103,7 +107,7 @@ def _tick():
             from telegram_bot import notify
             notify("⚠️ आजचा Upstox टोकन अजून आला नाही!\n"
                    "सकाळी लॉगिन करून /code XXXXXX पाठवा — नाहीतर आज "
-                   "BANKNIFTY व COPPER दोन्ही ट्रेड होणार नाहीत.")
+                   "कोणताही सिम्बॉल ट्रेड होणार नाही.")
         return
 
     # प्रत्येक सिम्बॉल आपल्या वेळेत, आपल्या नियमांनी चालतो
@@ -149,10 +153,11 @@ def _tick_symbol(S, token, now):
 # एंट्री
 # ------------------------------------------------------------------
 def _data_key(S, now):
-    """सिम्बॉलचा डेटा-स्रोत: BN = इंडेक्स; CU = नवीनतम Copper फ्यूचर्स."""
+    """सिम्बॉलचा डेटा-स्रोत: BN = इंडेक्स; MCX = नवीनतम main-series फ्यूचर्स."""
     if not S["mcx"]:
         return C.INDEX_KEY, None
-    snap = instruments.copper_snapshot()
+    snap = instruments.mcx_snapshot(S["commodity"],
+                                    ts_pattern=S.get("ts_pattern"))
     if not snap:
         return None, None
     return snap["fut"]["key"], snap
@@ -168,10 +173,10 @@ def _maybe_enter(S, date, token, now):
 
     dkey, snap = _data_key(S, now)
     if not dkey:
-        if store.get_state("cunote_" + date) != "1":
-            store.set_state("cunote_" + date, "1")
-            notify("⚠️ Copper कॉन्ट्रॅक्ट डेटा आज मिळाला नाही — "
-                   "आज COPPER वगळला (BANKNIFTY सामान्य चालू राहील).")
+        if store.get_state("instrnote_" + date + "_" + skey) != "1":
+            store.set_state("instrnote_" + date + "_" + skey, "1")
+            notify(f"⚠️ {S['label']} कॉन्ट्रॅक्ट डेटा आज मिळाला नाही — "
+                   f"आज {S['short']} वगळला (इतर सिम्बॉल्स सामान्य चालू राहतील).")
         return
 
     # आजचे 1-मिनिट कॅन्डल
@@ -283,7 +288,9 @@ def _pick_option(token, spot, side):
 
 
 def _pick_option_file(S, snap, token, spot, side):
-    """COPPER: instruments फाईलमधून ATM स्ट्राइक + खरा LTP."""
+    """MCX: instruments फाईलमधून ATM स्ट्राइक + खरा LTP.
+    trade qty = ऑप्शनचा खरा lot (फाईलमधून); GOLD साठी config ओव्हरराईड."""
+    opt_lot = S.get("trade_lot") or snap.get("opt_lot") or S["lot"]
     for k in instruments.atm_strikes(snap, spot, 4):
         node = snap["strikes"].get(str(k)) or snap["strikes"].get(int(k)) \
             or snap["strikes"].get(k)
@@ -296,10 +303,10 @@ def _pick_option_file(S, snap, token, spot, side):
         if not ltp or float(ltp) <= 0:
             continue
         ltp = float(ltp)
-        if ltp * S["lot"] > paper._capital(S) * 0.90:
+        if ltp * opt_lot > paper._capital(S) * 0.90:
             continue                         # हा ऑप्शन महाग → पुढचा बघा
         return {"key": key, "strike": float(k),
-                "expiry": snap["opt_expiry"], "ltp": ltp}
+                "expiry": snap["opt_expiry"], "ltp": ltp, "lot": int(opt_lot)}
     return None
 
 
