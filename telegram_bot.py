@@ -232,7 +232,14 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"₹{store.total_pnl_symbol(S['key']):,.0f}")
     lines.append(f"\nएकूण (सर्व सिम्बॉल्स) निव्वल P&L: ₹{store.total_pnl():,.0f} "
                  f"(खर्च ₹{store.total_charges():,.0f})")
-    await update.effective_message.reply_text("\n".join(lines))
+    try:
+        await update.effective_message.reply_text(
+            "\n".join(lines), parse_mode="HTML")
+    except Exception:
+        # HTML नाकारल्यास टॅग्ज काढून साधा मजकूर पाठवा
+        import re as _re
+        await update.effective_message.reply_text(
+            _re.sub(r"</?b>", "", "\n".join(lines)))
 
 
 async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
