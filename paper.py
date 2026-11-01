@@ -145,5 +145,7 @@ def close_trade(tid, ltp, reason, now_str, final_price=None):
     exit_avg = round(sell_value / qty, 2) if sell_value else final_price
     full_reason = " + ".join(str(l.get("label") or "?") for l in legs)
     store.close_trade(tid, exit_avg, pnl, full_reason[:200], now_str, chg_total)
-    store.set_legs(tid, [])
+    # संपूर्ण बुकिंग इतिहास (TP भाग + शेवटचा एग्झिट भाग) कायम ठेवा —
+    # /api/eval दैनिक मूल्यांकन आणि भविष्यातील विश्लेषणासाठी
+    store.set_legs(tid, legs)
     return pnl, exit_avg, chg_total, legs
