@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# गुपित / खाजगी डेटा — repo मध्ये कधीच जाऊ नये
+bot.env
+bot.db
+*.db-journal
+*.csv
+
+# सिस्टम
+.DS_Store
+*.log
