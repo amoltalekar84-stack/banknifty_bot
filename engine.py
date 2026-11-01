@@ -14,6 +14,7 @@ import time
 import traceback
 from datetime import time as dtime, timedelta
 
+import cards
 import config as C
 import paper
 import risk
@@ -53,7 +54,8 @@ def _loop():
     from telegram_bot import notify
     notify(f"🤖 बॉट सुरू झाला — मोड: {store.get_state('mode', 'PAPER')}\n"
            f"बाजार वेळ: {C.MARKET_OPEN}–{C.MARKET_CLOSE} IST (सोम–शुक्र)\n"
-           f"धोरण: ORB | SL: -{C.SL_PCT:.0f}% | टार्गेट: +{C.TARGET_PCT:.0f}%")
+           f"धोरण: ORB | SL: -{C.SL_PCT:.0f}% | TP लॅडर: +{C.TP1_PCT:.0f}% / "
+           f"+{C.TARGET_PCT:.0f}% / +{C.TP3_PCT:.0f}% (भागाकार बुकिंग)")
     while True:
         try:
             _tick()
@@ -184,16 +186,15 @@ def _maybe_enter(date, token, now):
         notify("🚫 एंट्री रद्द: " + err)
         return
 
-    emo = "🟢" if sig["side"] == "CE" else "🔴"
-    est_chg = paper.round_trip_charges(tr["entry"], tr["entry"], tr["qty"])
-    notify(f"""{emo} ENTRY ({mode})
-📊 {C.INDEX_LABEL} {opt['strike']:.0f} {sig['side']} (एक्सपायरी: {opt['expiry']})
-💰 एंट्री: ₹{tr['entry']:.2f} × {tr['qty']} = ₹{tr['entry']*tr['qty']:,.0f}
-🛑 स्टॉप लॉस: ₹{tr['sl']:.2f}
-🎯 टार्गेट: ₹{tr['target']:.2f}
-🧾 अंदाजे खर्च (2 ऑर्डर + सर्व कर): ₹{est_chg:,.0f}
-📌 OR: {sig['or_high']:.0f} / {sig['or_low']:.0f} | ब्रेकआउट: {sig['breakout']:.0f}
-🕐 {now.strftime('%H:%M:%S')} IST""")
+    tp1, tp2, tp3 = paper.tp_prices(tr["entry"])
+    lots = max(int(tr["qty"]) // max(C.LOT_SIZE, 1), 1)
+    est_chg, est_orders = paper.ladder_charges_estimate(tr["entry"], tr["qty"])
+    card = cards.entry_card(
+        mode, sig["side"], opt["strike"], opt["expiry"], tr["entry"],
+        tr["qty"], lots, spot, sig["or_high"], sig["or_low"],
+        sig["breakout"], tr["sl"], tp1, tp2, tp3, est_chg, est_orders,
+        now, C.INDEX_LABEL)
+    notify(card, html=True)
 
 
 def _pick_option(token, spot, side):
@@ -234,9 +235,6 @@ def _capital():
         return C.CAPITAL
 
 
-# ------------------------------------------------------------------
-# एग्झिट / निरीक्षण
-# ------------------------------------------------------------------
 def _monitor(pos, token, now):
     from telegram_bot import notify
 
@@ -244,51 +242,118 @@ def _monitor(pos, token, now):
     if ltp is None or ltp <= 0:
         return
 
-    # ट्रेल: +25% झाल्यावर SL खर्चाच्या (breakeven) ठिकाणी आणा
-    if ltp >= pos["entry"] * (1 + C.TRAIL_START_PCT / 100.0) and pos["sl"] < pos["entry"]:
-        store.update_sl(pos["id"], pos["entry"])
-        pos["sl"] = pos["entry"]
-        notify(f"🔒 SL breakeven वर आणले — {C.INDEX_LABEL} {pos['strike']:.0f} {pos['side']} "
-               f"(आता तोटा शक्य नाही)")
+    tp1, tp2, tp3 = paper.tp_prices(pos["entry"])
+    legs = store.get_legs(pos["id"])
+    booked = sum(int(l.get("qty") or 0) for l in legs)
+    rem = int(pos["qty"]) - booked
+    q1, q2, _q3 = paper.thirds(pos["qty"])
 
-    reason = None
+    # ---------- प्रथम सुरक्षा: स्क्वेअर-ऑफ व SL ----------
     if now.time() >= _t(C.SQUARE_OFF):
-        reason = "वेळ एग्झिट (15:05)"
-    elif ltp <= pos["sl"]:
+        _finish(pos, token, ltp, now, "वेळ एग्झिट (15:05)")
+        return
+    if ltp <= pos["sl"]:
         reason = "स्टॉप लॉस" if pos["sl"] < pos["entry"] else "ट्रेल SL 🔒"
-    elif ltp >= pos["target"]:
-        reason = "टार्गेट पोहोचला ✅"
-    if not reason:
+        _finish(pos, token, ltp, now, reason)
         return
 
-    mode = pos["mode"]
-    if mode == "LIVE":
-        pnl, exitp, chg = _live_close(pos, token, ltp, now, reason)
+    # ---------- TP लॅडर — भागाकार बुकिंग (लॉट 30 → 10+10+10) ----------
+    if booked < q1:
+        if ltp >= tp1:                        # ① TP1: 1/3 बुक + breakeven लॉक
+            info = _book_leg(pos, token, ltp, now, "TP1")
+            if info:
+                if pos["sl"] < pos["entry"]:
+                    store.update_sl(pos["id"], pos["entry"])
+                    pos["sl"] = pos["entry"]
+                notify(cards.tp_card(pos["mode"], pos["side"], pos["strike"],
+                                     1, info["price"], info["qty"],
+                                     info["gross"], info["remaining"],
+                                     pos["entry"], pos["entry"],
+                                     now.strftime("%H:%M:%S"),
+                                     C.INDEX_LABEL), html=True)
+    elif booked < q1 + q2:
+        if ltp >= tp2:                        # ② TP2: दुसरा 1/3 + SL +10% वर
+            info = _book_leg(pos, token, ltp, now, "TP2")
+            if info:
+                new_sl = round(pos["entry"] * 1.10, 2)
+                store.update_sl(pos["id"], new_sl)
+                pos["sl"] = new_sl
+                notify(cards.tp_card(pos["mode"], pos["side"], pos["strike"],
+                                     2, info["price"], info["qty"],
+                                     info["gross"], info["remaining"],
+                                     new_sl, pos["entry"],
+                                     now.strftime("%H:%M:%S"),
+                                     C.INDEX_LABEL), html=True)
     else:
-        pnl, exitp, chg = paper.close_trade(pos["id"], ltp, reason,
-                                            now.strftime("%Y-%m-%d %H:%M:%S"))
+        if ltp >= tp3:                        # ③ TP3: शेवटचा भाग → ट्रेड पूर्ण
+            info = _book_leg(pos, token, ltp, now, "TP3")
+            if info:
+                _finish(pos, token, ltp, now, "TP3 पूर्ण ✅")
 
-    gross = round((exitp - pos["entry"]) * pos["qty"], 2)
+
+def _book_leg(pos, token, ltp, now, label):
+    """पुढचा 1/3 भाग वर्तमान किंमतीवर बुक करा (PAPER/LIVE) → info dict"""
+    from telegram_bot import notify
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    if pos["mode"] == "LIVE":
+        legs = store.get_legs(pos["id"])
+        booked = sum(int(l.get("qty") or 0) for l in legs)
+        q1, q2, _q3 = paper.thirds(pos["qty"])
+        leg_q = q1 if booked < q1 else (q2 if booked < q1 + q2
+                                        else int(pos["qty"]) - booked)
+        leg_q = min(leg_q, int(pos["qty"]) - booked)
+        if leg_q <= 0:
+            return None
+        order_id = place_order(token, pos["option_key"], leg_q, "SELL")
+        store.log_event(f"LIVE SELL(leg) {pos['option_key']} qty={leg_q} "
+                        f"order={order_id}")
+        price = round(ltp * (1 - C.SLIPPAGE), 2)
+        legs = paper.record_leg(pos["id"], price, leg_q, label, now_str)
+        booked2 = sum(int(l.get("qty") or 0) for l in legs)
+        return {"price": price, "qty": leg_q,
+                "gross": round((price - pos["entry"]) * leg_q, 2),
+                "remaining": int(pos["qty"]) - booked2, "legs": legs}
+    try:
+        return paper.book_partial(pos["id"], ltp, label, now_str)
+    except Exception as e:
+        store.log_event("book_leg err: " + repr(e))
+        notify("⚠️ TP बुकिंग त्रुटी: " + repr(e)[:150])
+        return None
+
+
+def _finish(pos, token, ltp, now, reason):
+    """ट्रेड पूर्ण बंद (शिल्लक भाग + आधीचे भाग एकत्र) → एग्झिट रसीद कार्ड"""
+    from telegram_bot import notify
+    now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+    if pos["mode"] == "LIVE":
+        legs0 = store.get_legs(pos["id"])
+        booked = sum(int(l.get("qty") or 0) for l in legs0)
+        rem = int(pos["qty"]) - booked
+        if rem > 0:
+            order_id = place_order(token, pos["option_key"], rem, "SELL")
+            store.log_event(f"LIVE SELL {pos['option_key']} qty={rem} "
+                            f"order={order_id}")
+        exitp = round(ltp * (1 - C.SLIPPAGE), 2)
+        pnl, exit_avg, chg, legs = paper.close_trade(
+            pos["id"], ltp, reason, now_str, final_price=exitp)
+    else:
+        pnl, exit_avg, chg, legs = paper.close_trade(pos["id"], ltp, reason,
+                                                     now_str)
     halted = risk.register_exit(pos["date"], pnl)
-    icon = "✅" if pnl >= 0 else "❌"
-    msg = f"""{icon} EXIT ({mode}) — {reason}
-📊 {C.INDEX_LABEL} {pos['strike']:.0f} {pos['side']}
-💰 एंट्री ₹{pos['entry']:.2f} → एग्झिट ₹{exitp:.2f}
-📈 करपूर्व P&L: ₹{gross:,.0f}
-🧾 खर्च (ब्रोकरेज+STT+GST+स्टॅम्प): ₹{chg:,.0f}
-📉 निव्वळ P&L: ₹{pnl:,.0f}
-📊 आजचा निव्वळ P&L: ₹{store.today_pnl(pos['date']):,.0f} | एकूण: ₹{store.total_pnl():,.0f}"""
-    if halted:
-        msg += ("\n🛑 दैनिक नुकसान मर्यादा (₹{:,.0f}) ओलांडली — "
-                "आज पुढे कोणताही ट्रेड नाही.".format(-abs(C.MAX_DAILY_LOSS)))
-    notify(msg)
+    full_reason = (" + ".join(str(l.get("label") or "") for l in legs)
+                   or reason)
+    in_ts = (pos["opened"] or "")[-8:-3] or "--:--"
+    card = cards.exit_card(pos["mode"], pos["side"], pos["strike"],
+                           full_reason, pos["entry"], exit_avg, chg, pnl,
+                           legs, store.today_pnl(pos["date"]),
+                           store.total_pnl(), halted, C.MAX_DAILY_LOSS,
+                           in_ts, now.strftime("%H:%M"), C.INDEX_LABEL)
+    notify(card, html=True)
+    return pnl
 
 
-# ------------------------------------------------------------------
-# LIVE mode (फक्त ३ गेट उघडल्यावरच चालते)
-# ------------------------------------------------------------------
 def _force_close(pos, token, now):
-    """KILL स्विच — पोझिशन तात्काळ बंद"""
+    """KILL स्विच — पोझिशन (शिल्लक भाग) तात्काळ बंद"""
     from telegram_bot import notify
     try:
         ltp = get_ltp(pos["option_key"], token)
@@ -296,14 +361,8 @@ def _force_close(pos, token, now):
         ltp = None
     if ltp is None or ltp <= 0:
         return                                  # पुढील लूपमध्ये पुन्हा प्रयत्न
-    if pos["mode"] == "LIVE":
-        pnl, exitp, chg = _live_close(pos, token, ltp, now, "KILL स्विच 🚨")
-    else:
-        pnl, exitp, chg = paper.close_trade(pos["id"], ltp, "KILL स्विच 🚨",
-                                            now.strftime("%Y-%m-%d %H:%M:%S"))
-    notify(f"🚨 KILL: पोझिशन बंद केली — {pos['strike']:.0f} {pos['side']}\n"
-           f"एग्झिट ₹{exitp:.2f} | निव्वळ P&L ₹{pnl:,.0f} (खर्च ₹{chg:,.0f})\n"
-           f"परत सुरू करण्यासाठी: /resume")
+    _finish(pos, token, ltp, now, "KILL स्विच 🚨")
+    notify("🚨 KILL: पोझिशन बंद केली — परत सुरू करण्यासाठी: /resume")
 
 
 def _live_open(sig, opt, token, date, now):
@@ -314,18 +373,9 @@ def _live_open(sig, opt, token, date, now):
     tg = round(entry * (1 + C.TARGET_PCT / 100.0), 2)
     tid = store.open_trade(date, "LIVE", sig["side"], opt["key"], opt["strike"],
                            opt["expiry"], C.LOT_SIZE, entry, sl, tg, sig.get("time", ""))
-    return {"id": tid, "entry": entry, "sl": sl, "target": tg, "qty": C.LOT_SIZE}, ""
-
-
-def _live_close(pos, token, ltp, now, reason):
-    order_id = place_order(token, pos["option_key"], pos["qty"], "SELL")
-    store.log_event(f"LIVE SELL {pos['option_key']} qty={pos['qty']} order={order_id}")
-    exitp = round(ltp * (1 - C.SLIPPAGE), 2)
-    chg = paper.round_trip_charges(pos["entry"], exitp, pos["qty"])
-    pnl = round((exitp - pos["entry"]) * pos["qty"] - chg, 2)
-    store.close_trade(pos["id"], exitp, pnl, reason,
-                      now.strftime("%Y-%m-%d %H:%M:%S"), chg)
-    return pnl, exitp, chg
+    store.set_legs(tid, [])
+    return {"id": tid, "entry": entry, "sl": sl, "target": tg,
+            "qty": C.LOT_SIZE}, ""
 
 
 # ------------------------------------------------------------------

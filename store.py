@@ -3,6 +3,7 @@
 प्रत्येक क्वेरीसाठी स्वतंत्र कनेक्शन → थ्रेड-सेफ.
 """
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -60,6 +61,23 @@ def init_db():
             con.execute("ALTER TABLE trades ADD COLUMN charges REAL DEFAULT 0")
         except sqlite3.OperationalError:
             pass                      # column आधीच आहे
+
+
+# ---------------- TP-लॅडर legs (partial बुकिंग नोंदी) ----------------
+def get_legs(tid):
+    """या ट्रेडच्या झालेल्या बुकिंग भाग → [{label, price, qty}, ...]"""
+    v = get_state(f"legs_{tid}")
+    if not v:
+        return []
+    try:
+        return json.loads(v)
+    except (ValueError, TypeError):
+        return []
+
+
+def set_legs(tid, legs):
+    """बुकिंग भाग नोंदवा / साफ करा ([] = साफ)"""
+    set_state(f"legs_{tid}", json.dumps(legs or []))
 
 
 # ---------------- state (सेटिंग्ज/स्थिती) ----------------

@@ -70,6 +70,38 @@ def option_charges(buy_value, sell_value):
             "total": round(total, 2)}
 
 
+def option_charges_ladder(buy_value, sell_legs):
+    """
+    TP-लॅडर ट्रेडसाठी: एक बाय ऑर्डर + अनेक वेगवेगळे सेल ऑर्डर.
+    buy_value = एंट्री × एकूण qty
+    sell_legs = [(किंमत, qty), ...] — प्रत्येक बुकिंग एक वेगळा सेल ऑर्डर
+    (प्रत्येक सेल ऑर्डरला वेगळे ₹20 ब्रोकरेज लागते — हेच वास्तव!)
+    """
+    buy_value = max(float(buy_value or 0), 0.0)
+    legs = [(float(p), float(q)) for (p, q) in sell_legs if float(q) > 0]
+    sell_value = sum(p * q for p, q in legs)
+
+    n_orders = (1 if buy_value > 0 else 0) + len(legs)
+    brokerage = BROKERAGE_PER_ORDER * n_orders
+    stt = sell_value * STT_SELL_PCT / 100.0
+    nse = (buy_value + sell_value) * NSE_TXN_PCT / 100.0
+    sebi = (buy_value + sell_value) * SEBI_PCT / 100.0
+    ipft = (buy_value + sell_value) * IPFT_PCT / 100.0
+    stamp = buy_value * STAMP_BUY_PCT / 100.0
+    gst = (brokerage + nse + sebi + ipft) * GST_PCT / 100.0
+
+    total = brokerage + stt + nse + sebi + ipft + stamp + gst
+    return {"brokerage": round(brokerage, 2),
+            "stt": round(stt, 2),
+            "nse_txn": round(nse, 2),
+            "sebi": round(sebi, 2),
+            "ipft": round(ipft, 2),
+            "stamp": round(stamp, 2),
+            "gst": round(gst, 2),
+            "total": round(total, 2),
+            "orders": n_orders}
+
+
 if __name__ == "__main__":
     # उदाहरण: ₹150 प्रीमियमला 1 lot बाय → ₹160 ला सेल (जिंकीचा ट्रेड)
     b = option_charges(150 * 30, 160 * 30)

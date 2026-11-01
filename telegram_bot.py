@@ -12,6 +12,7 @@ import threading
 from datetime import time as dtime
 
 import config as C
+import paper
 import store
 from config import ist_now
 from telegram import Update
@@ -43,9 +44,9 @@ HELP = """🤖 BankNifty AI बॉट — कमांड्स:
 # ------------------------------------------------------------------
 # सुरक्षा हेल्पर
 # ------------------------------------------------------------------
-def notify(text):
-    """इंजिन → टेलिग्राम अलर्ट (थ्रेड-सेफ क्यु)"""
-    NOTIFY_Q.put(text)
+def notify(text, html=False):
+    """इंजिन → टेलिग्राम अलर्ट (थ्रेड-सेफ क्यु); html=True असल्यास सुंदर कार्ड"""
+    NOTIFY_Q.put((text, bool(html)))
 
 
 async def _vanish(update: Update):
@@ -209,19 +210,32 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("📭 सध्या कोणती पोझिशन नाही.")
         return
     tok = store.get_state("upstox_token")
+    legs = store.get_legs(pos["id"])
+    booked = sum(int(l.get("qty") or 0) for l in legs)
+    rem = int(pos["qty"]) - booked
+    tp1, tp2, tp3 = paper.tp_prices(pos["entry"])
+    leg_txt = ""
+    if legs:
+        leg_txt = "\n📖 बुक झालेले भाग:" + "".join(
+            f"\n  ✅ {l.get('label')}: ₹{float(l['price']):.2f} × {int(l['qty'])}"
+            for l in legs)
     ltp_txt = ""
     if tok:
         try:
             ltp = get_ltp(pos["option_key"], tok)
             if ltp:
-                unreal = (ltp - pos["entry"]) * pos["qty"]
-                ltp_txt = f"\nधारमान P&L: ₹{unreal:,.0f}"
+                unreal = (ltp - pos["entry"]) * rem if rem else 0
+                ltp_txt = (f"\n📍 LTP: ₹{ltp:.2f} | उर्वरित भागाचा धारमान "
+                           f"P&L: ₹{unreal:,.0f}")
         except Exception:
             pass
     await update.effective_message.reply_text(
-        f"📂 उघडी पोझिशन:\n{pos['strike']:.0f} {pos['side']} × {pos['qty']}\n"
-        f"एंट्री: ₹{pos['entry']:.2f}\nSL: ₹{pos['sl']:.2f} | टार्गेट: ₹{pos['target']:.2f}"
-        f"{ltp_txt}")
+        f"📂 उघडी पोझिशन:\n{pos['strike']:.0f} {pos['side']} — "
+        f"एंट्री ₹{pos['entry']:.2f} × {pos['qty']}\n"
+        f"📦 उर्वरित: {rem} | बुक: {booked}\n"
+        f"🛑 SL: ₹{pos['sl']:.2f}\n"
+        f"🎯 TP1 ₹{tp1:.2f} | TP2 ₹{tp2:.2f} | TP3 ₹{tp3:.2f}"
+        f"{leg_txt}{ltp_txt}")
 
 
 async def cmd_trades(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -396,17 +410,27 @@ async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # बॅकग्राउंड सर्व्हिस
 # ------------------------------------------------------------------
 async def _drain(app):
-    """क्युमधले अलर्ट टेलिग्रामला पाठवत राहा"""
+    """क्युमधले अलर्ट टेलिग्रामला पाठवत राहा (HTML कार्डांसह)"""
     loop = asyncio.get_running_loop()
     while True:
-        text = await loop.run_in_executor(None, NOTIFY_Q.get)
+        item = await loop.run_in_executor(None, NOTIFY_Q.get)
+        if isinstance(item, tuple):
+            text, html_mode = item
+        else:                      # जुन्या सवयी प्रमाणे साधा मजकूर
+            text, html_mode = item, False
         a = _admin_id()
         if not a:
             continue
         try:
-            await app.bot.send_message(chat_id=a, text=text)
+            await app.bot.send_message(
+                chat_id=a, text=text,
+                parse_mode="HTML" if html_mode else None)
         except Exception as ex:
-            print("TG send fail:", repr(ex))
+            # HTML नाकारले गेल्यास साधा मजकूर म्हणून पुन्हा प्रयत्न
+            try:
+                await app.bot.send_message(chat_id=a, text=text)
+            except Exception as ex2:
+                print("TG send fail:", repr(ex), repr(ex2))
 
 
 async def _serve():
