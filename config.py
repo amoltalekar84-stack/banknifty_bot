@@ -92,6 +92,78 @@ MAX_TRADES_PER_DAY = _i("MAX_TRADES_PER_DAY", 2)    # दिवसाला क�
 MAX_DAILY_LOSS = _f("MAX_DAILY_LOSS", 2500.0)       # दैनिक तोटा मर्यादा ₹2,500 (भांडवलाच्या 5%)
 
 # ---------------------------------------------------------------
+# 7.5 COPPER (MCX) — दुसरा सिम्बॉल, स्वतंत्र ताजे भांडवल
+#     खऱ्या नियमांचा लॉजिकल रूपांतर (MCX lot 2500 kg असल्याने
+#     10+10+10 भागाकार शक्य नाही):
+#       • +20% (TP1) → SL breakeven वर लॉक (कोणताही भाग बुक नाही)
+#       • +40% (TP2) → संपूर्ण लॉट बुकिंग
+#     वेळ: MCX 9:00–23:30/23:55 (US DST नुसार) — आपला
+#     स्क्वेअर-ऑफ 23:05 दोन्ही परिस्थितीत सुरक्षित.
+#     Copper चे ORB: रेंज 9:15–9:45 (30 मिनिटं), एंट्री 9:45–12:00.
+# ---------------------------------------------------------------
+CU_LOT = _i("CU_LOT", 2500)                 # MCX Copper lot = 2500 kg (SEBI ₹15L नियम)
+CU_CAPITAL = _f("CU_CAPITAL", 200000.0)     # स्वतंत्र ताजे paper भांडवल ₹2 लाख
+CU_MAX_DAILY_LOSS = _f("CU_MAX_DAILY_LOSS", 10000.0)  # 5% of ₹2L
+CU_MAX_TRADES = _i("CU_MAX_TRADES", 2)
+CU_ORB_START = "09:15"
+CU_ORB_END = "09:45"
+CU_ENTRY_START = "09:45"
+CU_ENTRY_END = "12:00"
+CU_SQUARE_OFF = "23:05"
+CU_MARKET_OPEN = "09:00"
+CU_MARKET_CLOSE = "23:30"      # DST-काळ 23:30; हिवाळी 23:55 — 23:05 square-off दोन्हीत सुरक्षित
+
+COPPER = {
+    "key": "COPPER",
+    "label": "COPPER (MCX)",
+    "short": "CU",
+    "seg": "MCX",
+    "lot": CU_LOT,
+    "capital": CU_CAPITAL,
+    "capital_state": "capital_COPPER",
+    "max_trades": CU_MAX_TRADES,
+    "max_daily_loss": CU_MAX_DAILY_LOSS,
+    "orb_start": CU_ORB_START, "orb_end": CU_ORB_END,
+    "entry_start": CU_ENTRY_START, "entry_end": CU_ENTRY_END,
+    "square_off": CU_SQUARE_OFF,
+    "square_off_label": "वेळ एग्झिट (23:05)",
+    "market_open": CU_MARKET_OPEN, "market_close": CU_MARKET_CLOSE,
+    "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT, "tp3_pct": TP3_PCT,
+    "ladder": False,          # 1 lot (2500) — भागाकार बुकिंग शक्य नाही
+    "mcx": True,
+    "min_candles": 31,        # OR रेंज 9:15–9:45 = 30 कॅन्डल + 1
+    "summary_at": "23:10",    # Copper दैनिक अहवाल — स्क्वेअर-ऑफ नंतर
+}
+
+BANKNIFTY = {
+    "key": "BANKNIFTY",
+    "label": "BANKNIFTY",
+    "short": "BN",
+    "seg": "NSE",
+    "lot": LOT_SIZE,
+    "capital": CAPITAL,
+    "capital_state": "capital_BANKNIFTY",
+    "max_trades": MAX_TRADES_PER_DAY,
+    "max_daily_loss": MAX_DAILY_LOSS,
+    "orb_start": ORB_START, "orb_end": ORB_END,
+    "entry_start": ENTRY_START, "entry_end": ENTRY_END,
+    "square_off": SQUARE_OFF,
+    "square_off_label": "वेळ एग्झिट (15:05)",
+    "market_open": MARKET_OPEN, "market_close": MARKET_CLOSE,
+    "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT, "tp3_pct": TP3_PCT,
+    "ladder": True,           # लॉट 30 → 10+10+10 भागाकार
+    "mcx": False,
+    "min_candles": 16,
+    "summary_at": "15:20",
+}
+
+# इंजिन या क्रमाने प्रत्येक सिम्बॉल चालवते
+SYMBOLS = [BANKNIFTY, COPPER]
+
+# Copper पूर्णपणे बंद करायचं असल्यास env मध्ये ENABLE_COPPER=NO
+ENABLE_COPPER = os.getenv("ENABLE_COPPER", "YES").strip().upper() != "NO"
+
+# ---------------------------------------------------------------
 # 8. इंजिन
 # ---------------------------------------------------------------
 POLL_SEC = _i("POLL_SEC", 30)      # दर 30 सेकंदांनी बाजार तपासणी
@@ -99,6 +171,11 @@ SLIPPAGE = _f("SLIPPAGE", 0.0005)  # कागदी ट्रेडमध्य
 
 # डीफॉल्ट मोड — नेहमी PAPER (कागद) ने सुरु!
 MODE = os.getenv("TRADING_MODE", "PAPER").strip().upper()
+
+
+def active_symbols():
+    """चालू करण्यायोग्य सिम्बॉल्स (ENABLE_COPPER=NO असल्यास फक्त BANKNIFTY)"""
+    return [s for s in SYMBOLS if (s["key"] != "COPPER" or ENABLE_COPPER)]
 
 
 def ist_now():

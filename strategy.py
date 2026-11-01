@@ -11,7 +11,7 @@
 
 from datetime import datetime, time as dtime, timedelta
 
-from config import ORB_START, ORB_END, MIN_OR_WIDTH_PCT, MAX_OR_WIDTH_PCT, MAX_GAP_PCT
+from config import MAX_GAP_PCT, MAX_OR_WIDTH_PCT, MIN_OR_WIDTH_PCT, ORB_END, ORB_START
 
 
 def _t(s):
@@ -35,9 +35,9 @@ def parse_candles(candles):
     return out
 
 
-def opening_range(cs):
-    """09:15–09:30 दरम्यानची रेंज → {high, low, n} किंवा None"""
-    a, b = _t(ORB_START), _t(ORB_END)
+def opening_range(cs, orb_start=None, orb_end=None):
+    """ORB रेंज (डीफॉल्ट 9:15–9:30; Copper साठी 9:15–9:45) → {high, low, n} किंवा None"""
+    a, b = _t(orb_start or ORB_START), _t(orb_end or ORB_END)
     orc = [c for c in cs if a <= c["ts"].time() < b]
     if len(orc) < 12:          # पूर्ण 15 मिनिटे नाहीत → डेटा अपुरा (सुट्टी?)
         return None
@@ -48,11 +48,12 @@ def opening_range(cs):
     }
 
 
-def last_completed_5m(cs, now):
-    """शेवटची पूर्ण झालेली 5-मिनिट कॅन्डल (09:30 नंतरची)"""
+def last_completed_5m(cs, now, orb_end=None):
+    """शेवटची पूर्ण झालेली 5-मिनिट कॅन्डल (ORB समाप्तीनंतरची)"""
     groups = {}
+    orb_end_t = _t(orb_end or ORB_END)
     for c in cs:
-        if c["ts"].time() < _t(ORB_END):
+        if c["ts"].time() < orb_end_t:
             continue
         k = c["ts"].replace(minute=(c["ts"].minute // 5) * 5,
                             second=0, microsecond=0)
@@ -65,15 +66,17 @@ def last_completed_5m(cs, now):
     return done[-1] if done else None
 
 
-def analyze(cs, spot, now, prev_close=None):
+def analyze(cs, spot, now, prev_close=None,
+            orb_start=None, orb_end=None):
     """
     मुख्य विश्लेषण → सिग्नल dict किंवा None.
     फिल्टर वगळल्यास → {"blocked": कारण}
+    orb_start/orb_end — सिम्बॉल-विशिष्ट ORB वेळ (डीफॉल्ट BANKNIFTY 9:15–9:30)
     """
     if spot is None or spot <= 0 or not cs:
         return None
 
-    orb = opening_range(cs)
+    orb = opening_range(cs, orb_start, orb_end)
     if not orb:
         return None
 
@@ -90,7 +93,7 @@ def analyze(cs, spot, now, prev_close=None):
         if gap_pct > MAX_GAP_PCT:
             return {"blocked": f"गॅप {gap_pct:.2f}% — धोकादायक उघड"}
 
-    last = last_completed_5m(cs, now)
+    last = last_completed_5m(cs, now, orb_end)
     if not last:
         return None
 

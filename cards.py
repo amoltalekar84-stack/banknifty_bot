@@ -42,18 +42,33 @@ def _rs(amount):
 # ------------------------------------------------------------------
 def entry_card(mode, side, strike, expiry, entry, qty, lots, spot,
                or_high, or_low, breakout, sl, tp1, tp2, tp3, est_chg,
-               est_orders, in_ts, index_label="BANKNIFTY"):
+               est_orders, in_ts, index_label="BANKNIFTY", ladder=True):
     now_dt = in_ts
     date_line = (f"{now_dt.strftime('%d-%m-%Y')} ({day_name(now_dt)})")
     emo = "🟢" if side == "CE" else "🔴"
     side_full = "CALL (CE) — भाव वर जाण्याची शर्त" if side == "CE" \
         else "PUT (PE) — भाव खाली जाण्याची शर्त"
     invest = entry * qty
-    q1, q2, q3 = thirds_qty(qty)
-    pnl1 = (tp1 - entry) * q1
-    pnl2 = (tp2 - entry) * q2
-    pnl3 = (tp3 - entry) * q3
     sl_loss = (sl - entry) * qty
+    if ladder:
+        q1, q2, q3 = thirds_qty(qty)
+        pnl1 = (tp1 - entry) * q1
+        pnl2 = (tp2 - entry) * q2
+        pnl3 = (tp3 - entry) * q3
+        plan = f"""🎯 <b>प्लॅन (TP लॅडर)</b>
+🛑 SL: ₹{sl:.2f} (−20%) → कमाल तोटा {_rs(sl_loss)}
+1️⃣ TP1: ₹{tp1:.2f} (+20%) → {q1} बुक → {_rs(pnl1)}
+2️⃣ TP2: ₹{tp2:.2f} (+40%) → {q2} बुक → {_rs(pnl2)}
+3️⃣ TP3: ₹{tp3:.2f} (+60%) → {q3} बुक → {_rs(pnl3)}
+🔒 TP1 झाल्यावर SL breakeven वर — तोटा अशक्य!"""
+    else:
+        pnl2 = (tp2 - entry) * qty
+        pnl1 = (tp1 - entry) * qty
+        plan = f"""🎯 <b>प्लॅन (1 लॉट — भागाकार शक्य नाही)</b>
+🛑 SL: ₹{sl:.2f} (−20%) → कमाल तोटा {_rs(sl_loss)}
+1️⃣ +20%: ₹{tp1:.2f} → SL breakeven वर लॉक → अपेक्षित नफा {_rs(pnl1)}
+2️⃣ +40%: ₹{tp2:.2f} → संपूर्ण लॉट बुक → {_rs(pnl2)}
+🛑 किंवा वेळ एग्झिट (23:05) अगोदर जे प्रथम घडेल"""
 
     return f"""{emo} <b>{_esc(index_label)} {strike:.0f} {side} — नवीन ट्रेड ({_esc(mode)})</b>
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -65,12 +80,7 @@ def entry_card(mode, side, strike, expiry, entry, qty, lots, spot,
 • 💳 गुंतवणूक: <b>{_rs(invest)}</b>
 • 📍 {_esc(index_label)} स्पॉट: {_rs(spot)}
 ────────────────────
-🎯 <b>प्लॅन (TP लॅडर)</b>
-🛑 SL: ₹{sl:.2f} (−20%) → कमाल तोटा {_rs(sl_loss)}
-1️⃣ TP1: ₹{tp1:.2f} (+20%) → {q1} बुक → {_rs(pnl1)}
-2️⃣ TP2: ₹{tp2:.2f} (+40%) → {q2} बुक → {_rs(pnl2)}
-3️⃣ TP3: ₹{tp3:.2f} (+60%) → {q3} बुक → {_rs(pnl3)}
-🔒 TP1 झाल्यावर SL breakeven वर — तोटा अशक्य!
+{plan}
 ────────────────────
 📌 OR रेंज: {or_high:.0f} / {or_low:.0f} | ब्रेकआउट: {breakout:.0f}
 🧾 अंदाजे खर्च ({est_orders} ऑर्डर + सर्व कर): {_rs(est_chg)}"""
@@ -103,6 +113,20 @@ def tp_card(mode, side, strike, tp_no, price, qty, leg_gross,
 💵 या भागाचा करपूर्व नफा: <b>{_rs(leg_gross)}</b>
 📦 उर्वरित: {remaining} qty{lock}
 ⏰ {out_time} | TP{tp_no} बुकिंग पूर्ण ✅"""
+
+
+# ------------------------------------------------------------------
+# ②b Breakeven लॉक कार्ड (Copper — 1 लॉट, भागाकार बुकिंग नाही)
+# ------------------------------------------------------------------
+def lock_card(mode, side, strike, new_sl, entry, out_time,
+              index_label="COPPER (MCX)"):
+    return f"""🔒 <b>SL breakeven वर लॉक!</b> ({_esc(mode)})
+━━━━━━━━━━━━━━━━━━━━━━
+📊 {_esc(index_label)} {strike:.0f} {side}
+📈 नफा +20% झाला → SL आता ₹{new_sl:.2f} (एंट्री = ब्रेकइव्हन)
+🛡️ आता या ट्रेडमध्ये तोटा <b>शक्य नाही</b> (1 लॉट असल्याने भाग बुक नाही)
+🎯 पुढील लक्ष्य: +40% → संपूर्ण बुकिंग
+⏰ {out_time}"""
 
 
 # ------------------------------------------------------------------

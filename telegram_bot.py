@@ -23,20 +23,27 @@ from upstox_api import UpstoxError, exchange_code, get_ltp, validate_token
 NOTIFY_Q = queue.Queue()
 _pending_live = {}          # chat_id → True (LIVE पुष्टी वाटत बघत आहोत)
 
-HELP = """🤖 BankNifty AI बॉट — कमांड्स:
+
+def _t(s):
+    """'09:15' → time(9,15)"""
+    h, m = s.split(":")
+    return dtime(int(h), int(m))
+
+HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
 /settoken <टोकन> — थेट access token पाठवा ⭐ 🔒 संदेश आपोआप पुसला जातो
 /code <कोड> — Upstox लॉगिन कोड 🔒 संदेश आपोआप पुसला जातो (पर्याय)
-/status — सध्याची स्थिती
-/positions — उघड्या पोझिशन्स
+/status — सध्याची स्थिती (दोन्ही सिम्बॉल्स)
+/positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
 /trades — आजचे सर्व ट्रेड्स
-/pause — नवीन ट्रेड थांबवा
+/pause — नवीन ट्रेड थांबवा (दोन्ही)
 /resume — पुन्हा सुरू
 /kill — 🚨 इमर्जन्सी: सगळं बंद + पोझिशन बंद
 /mode paper — कागदी मोड (डीफॉल्ट)
 /mode live — प्रत्यक्ष पैशांचा मोड (कुलूपबंद)
-/setcapital 50000 — भांडवल बदला
+/setcapital 50000 — BANKNIFTY भांडवल बदला
+/setcapitalcu 200000 — COPPER भांडवल बदला
 /backtest 30 — जुन्या डेटावर धोरणाची चाचणी (सर्व खर्चांसह) 🧪
 /help — हे मेनू"""
 
@@ -183,20 +190,27 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     date = now.strftime("%Y-%m-%d")
     mode = store.get_state("mode", "PAPER")
     tok = store.get_state("upstox_token")
-    mkt = ("🟢 सुरू" if (now.weekday() < 5 and
-                         dtime(9, 15) <= now.time() <= dtime(15, 30)) else "🔴 बंद")
-    pos = store.get_open_trade(date)
-    pos_txt = (f"{pos['strike']:.0f} {pos['side']} @ ₹{pos['entry']:.2f} "
-               f"(SL ₹{pos['sl']:.2f} / T ₹{pos['target']:.2f})" if pos else "—")
-    txt = f"""📊 स्थिती ({now.strftime('%H:%M')} IST)
-मोड: {mode} | बाजार: {mkt}
-टोकन: {'✅ आहे' if tok else '❌ नाही — /code पाठवा'}
-आजचे ट्रेड्स: {len(store.trades_today(date))}
-आजचा निव्वल P&L: ₹{store.today_pnl(date):,.0f} (खर्च ₹{store.today_charges(date):,.0f})
-सुरुवातीपासून निव्वल P&L: ₹{store.total_pnl():,.0f} (एकूण खर्च ₹{store.total_charges():,.0f})
-पोझिशन: {pos_txt}
-पॉज: {'हो' if store.get_state('paused') == '1' else 'नाही'} | KILL: {'🚨 चालू' if store.get_state('killed') == '1' else 'नाही'}"""
-    await update.effective_message.reply_text(txt)
+    import config as _C
+    lines = [f"📊 स्थिती ({now.strftime('%H:%M')} IST)",
+             f"मोड: {mode} | टोकन: {'✅ आहे' if tok else '❌ नाही — /code पाठवा'}",
+             f"पॉज: {'हो' if store.get_state('paused') == '1' else 'नाही'} | "
+             f"KILL: {'🚨 चालू' if store.get_state('killed') == '1' else 'नाही'}"]
+    for S in _C.active_symbols():
+        mkt = ("🟢 सुरू" if (now.weekday() < 5 and
+                             _t(S["market_open"]) <= now.time() <= _t(S["market_close"]))
+               else "🔴 बंद")
+        pos = store.get_open_trade(date, S["key"])
+        pos_txt = (f"{pos['strike']:.0f} {pos['side']} @ ₹{pos['entry']:.2f} "
+                   f"(SL ₹{pos['sl']:.2f})" if pos else "—")
+        lines.append(
+            f"\n▪ <b>{S['label']}</b> {mkt}\n"
+            f"  आजचे ट्रेड्स: {len(store.trades_today(date, S['key']))} | "
+            f"आजचा निव्वल: ₹{store.today_pnl(date, S['key']):,.0f}\n"
+            f"  पोझिशन: {pos_txt} | सुरुवातीपासून: "
+            f"₹{store.total_pnl_symbol(S['key']):,.0f}")
+    lines.append(f"\nएकूण (दोन्ही) निव्वल P&L: ₹{store.total_pnl():,.0f} "
+                 f"(खर्च ₹{store.total_charges():,.0f})")
+    await update.effective_message.reply_text("\n".join(lines))
 
 
 async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -205,37 +219,45 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(e)
         return
     date = ist_now().strftime("%Y-%m-%d")
-    pos = store.get_open_trade(date)
-    if not pos:
+    pos_all = store.open_trades(date)
+    if not pos_all:
         await update.effective_message.reply_text("📭 सध्या कोणती पोझिशन नाही.")
         return
     tok = store.get_state("upstox_token")
-    legs = store.get_legs(pos["id"])
-    booked = sum(int(l.get("qty") or 0) for l in legs)
-    rem = int(pos["qty"]) - booked
-    tp1, tp2, tp3 = paper.tp_prices(pos["entry"])
-    leg_txt = ""
-    if legs:
-        leg_txt = "\n📖 बुक झालेले भाग:" + "".join(
-            f"\n  ✅ {l.get('label')}: ₹{float(l['price']):.2f} × {int(l['qty'])}"
-            for l in legs)
-    ltp_txt = ""
-    if tok:
-        try:
-            ltp = get_ltp(pos["option_key"], tok)
-            if ltp:
-                unreal = (ltp - pos["entry"]) * rem if rem else 0
-                ltp_txt = (f"\n📍 LTP: ₹{ltp:.2f} | उर्वरित भागाचा धारमान "
-                           f"P&L: ₹{unreal:,.0f}")
-        except Exception:
-            pass
-    await update.effective_message.reply_text(
-        f"📂 उघडी पोझिशन:\n{pos['strike']:.0f} {pos['side']} — "
-        f"एंट्री ₹{pos['entry']:.2f} × {pos['qty']}\n"
-        f"📦 उर्वरित: {rem} | बुक: {booked}\n"
-        f"🛑 SL: ₹{pos['sl']:.2f}\n"
-        f"🎯 TP1 ₹{tp1:.2f} | TP2 ₹{tp2:.2f} | TP3 ₹{tp3:.2f}"
-        f"{leg_txt}{ltp_txt}")
+    import config as _C
+    smap = {s["key"]: s for s in _C.active_symbols()}
+    for pos in pos_all:
+        S = smap.get(pos.get("symbol"), _C.BANKNIFTY)
+        legs = store.get_legs(pos["id"])
+        booked = sum(int(l.get("qty") or 0) for l in legs)
+        rem = int(pos["qty"]) - booked
+        tp1, tp2, tp3 = paper.tp_prices(pos["entry"], S)
+        leg_txt = ""
+        if legs:
+            leg_txt = "\n📖 बुक झालेले भाग:" + "".join(
+                f"\n  ✅ {l.get('label')}: ₹{float(l['price']):.2f} × {int(l['qty'])}"
+                for l in legs)
+        ltp_txt = ""
+        if tok:
+            try:
+                ltp = get_ltp(pos["option_key"], tok)
+                if ltp:
+                    unreal = (ltp - pos["entry"]) * rem if rem else 0
+                    ltp_txt = (f"\n📍 LTP: ₹{ltp:.2f} | उर्वरित भागाचा धारमान "
+                               f"P&L: ₹{unreal:,.0f}")
+            except Exception:
+                pass
+        if S.get("ladder"):
+            tp_line = f"🎯 TP1 ₹{tp1:.2f} | TP2 ₹{tp2:.2f} | TP3 ₹{tp3:.2f}"
+        else:
+            tp_line = f"🎯 +20% वर SL breakeven | +40% ₹{tp2:.2f} पूर्ण बुकिंग"
+        await update.effective_message.reply_text(
+            f"📂 उघडी पोझिशन — {S['label']}:\n"
+            f"{pos['strike']:.0f} {pos['side']} — एंट्री ₹{pos['entry']:.2f} × {pos['qty']}\n"
+            f"📦 उर्वरित: {rem} | बुक: {booked}\n"
+            f"🛑 SL: ₹{pos['sl']:.2f}\n"
+            f"{tp_line}"
+            f"{leg_txt}{ltp_txt}")
 
 
 async def cmd_trades(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -251,12 +273,13 @@ async def cmd_trades(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines = [f"📋 आजचे ट्रेड्स ({len(ts)}):"]
     for t in ts:
         icon = "✅" if (t["pnl"] or 0) >= 0 else "❌"
+        sym = (t.get("symbol") or "BANKNIFTY")
         if t["status"] == "CLOSED":
-            lines.append(f"{icon} {t['strike']:.0f} {t['side']}: "
+            lines.append(f"{icon} [{sym}] {t['strike']:.0f} {t['side']}: "
                          f"₹{t['entry']:.1f} → ₹{t['exit']:.1f} = निव्वळ ₹{t['pnl']:,.0f} "
                          f"(खर्च ₹{(t['charges'] or 0):,.0f}) ({t['reason']})")
         else:
-            lines.append(f"⏳ {t['strike']:.0f} {t['side']}: उघडी @ ₹{t['entry']:.1f}")
+            lines.append(f"⏳ [{sym}] {t['strike']:.0f} {t['side']}: उघडी @ ₹{t['entry']:.1f}")
     await update.effective_message.reply_text("\n".join(lines))
 
 
@@ -288,10 +311,11 @@ async def cmd_kill(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     store.set_state("killed", "1")
     date = ist_now().strftime("%Y-%m-%d")
-    pos = store.get_open_trade(date)
-    msg = "🚨 KILL स्विच चालू!\nइंजिन पुढील 30 सेकंदांत उघडी पोझिशन बंद करेल व नवीन ट्रेड नाही."
-    if pos:
-        msg += f"\n⚠️ उघडी पोझिशन: {pos['strike']:.0f} {pos['side']} @ ₹{pos['entry']:.2f}"
+    pos_all = store.open_trades(date)
+    msg = "🚨 KILL स्विच चालू!\nइंजिन पुढील 30 सेकंदांत उघड्या पोझिशन्स बंद करेल व नवीन ट्रेड नाही."
+    for pos in pos_all:
+        msg += (f"\n⚠️ [{pos.get('symbol') or 'BANKNIFTY'}] उघडी पोझिशन: "
+                f"{pos['strike']:.0f} {pos['side']} @ ₹{pos['entry']:.2f}")
     msg += "\nपरत सुरू करण्यासाठी: /resume"
     notify("🚨 KILL दाबला गेला — इंजिन स्क्वेअर-ऑफ करत आहे...")
     await update.effective_message.reply_text(msg)
@@ -335,16 +359,42 @@ async def cmd_setcapital(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text(e)
         return
     if not ctx.args:
-        await update.effective_message.reply_text("वापर: /setcapital 50000")
+        await update.effective_message.reply_text("वापर: /setcapital 50000 (BANKNIFTY)")
         return
     try:
         val = float(ctx.args[0].replace(",", ""))
         if val < 10000:
             raise ValueError
-        store.set_state("capital", str(val))
-        await update.effective_message.reply_text(f"✅ भांडवल ₹{val:,.0f} सेट झाले.")
+        store.set_state("capital_BANKNIFTY", str(val))
+        store.set_state("capital", str(val))   # जुने key पण अपडेट (सुसंगतता)
+        await update.effective_message.reply_text(
+            f"✅ BANKNIFTY भांडवल ₹{val:,.0f} सेट झाले.\n"
+            f"(COPPER बदलण्यासाठी: /setcapitalcu 200000)")
     except ValueError:
         await update.effective_message.reply_text("अवैध रक्कम — उदा. /setcapital 50000")
+
+
+async def cmd_setcapitalcu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """COPPER चे स्वतंत्र भांडवल (डीफॉल्ट ₹2,00,000 — MCX lot 2500 kg असल्याने)"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    if not ctx.args:
+        await update.effective_message.reply_text(
+            "वापर: /setcapitalcu 200000\n"
+            "(Copper 1 लॉट = 2500 kg; ATM ऑप्शन ~₹75,000+ असल्याने "
+            "₹2 लाख शिफारसीय)")
+        return
+    try:
+        val = float(ctx.args[0].replace(",", ""))
+        if val < 50000:
+            raise ValueError
+        store.set_state("capital_COPPER", str(val))
+        await update.effective_message.reply_text(
+            f"✅ COPPER भांडवल ₹{val:,.0f} सेट झाले (स्वतंत्र — BANKNIFTY ला स्पर्श नाही).")
+    except ValueError:
+        await update.effective_message.reply_text("अवैध रक्कम — उदा. /setcapitalcu 200000")
 
 
 async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -448,6 +498,7 @@ async def _serve():
     app.add_handler(CommandHandler("kill", cmd_kill))
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("setcapital", cmd_setcapital))
+    app.add_handler(CommandHandler("setcapitalcu", cmd_setcapitalcu))
     app.add_handler(CommandHandler("backtest", cmd_backtest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 

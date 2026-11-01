@@ -61,6 +61,11 @@ def init_db():
             con.execute("ALTER TABLE trades ADD COLUMN charges REAL DEFAULT 0")
         except sqlite3.OperationalError:
             pass                      # column आधीच आहे
+        # multi-symbol: सिम्बॉल column (जुन्या rows = BANKNIFTY)
+        try:
+            con.execute("ALTER TABLE trades ADD COLUMN symbol TEXT DEFAULT 'BANKNIFTY'")
+        except sqlite3.OperationalError:
+            pass                      # column आधीच आहे
 
 
 # ---------------- TP-लॅडर legs (partial बुकिंग नोंदी) ----------------
@@ -104,12 +109,14 @@ def last_events(n=20):
 
 
 # ---------------- trades (ट्रेड्स) ----------------
-def open_trade(date, mode, side, option_key, strike, expiry, qty, entry, sl, target, opened):
+def open_trade(date, mode, side, option_key, strike, expiry, qty, entry,
+               sl, target, opened, symbol="BANKNIFTY"):
     return _q(
         """INSERT INTO trades(date,mode,side,option_key,strike,expiry,
-                              qty,entry,sl,target,status,opened)
-           VALUES(?,?,?,?,?,?,?,?,?,?,'OPEN',?)""",
-        (date, mode, side, option_key, strike, expiry, qty, entry, sl, target, opened),
+                              qty,entry,sl,target,status,opened,symbol)
+           VALUES(?,?,?,?,?,?,?,?,?,?,'OPEN',?,?)""",
+        (date, mode, side, option_key, strike, expiry, qty, entry, sl,
+         target, opened, symbol),
         commit=True)
 
 
@@ -128,30 +135,52 @@ def get_trade(tid):
     return dict(row) if row else None
 
 
-def get_open_trade(date):
-    row = _q("SELECT * FROM trades WHERE status='OPEN' AND date=? ORDER BY id DESC LIMIT 1",
-             (date,), fetch="one")
+def get_open_trade(date, symbol=None):
+    """symbol=None → कोणताही (नवीनतम); symbol='BANKNIFTY' → फक्त तोच"""
+    if symbol:
+        row = _q("SELECT * FROM trades WHERE status='OPEN' AND date=? AND symbol=? "
+                 "ORDER BY id DESC LIMIT 1", (date, symbol), fetch="one")
+    else:
+        row = _q("SELECT * FROM trades WHERE status='OPEN' AND date=? "
+                 "ORDER BY id DESC LIMIT 1", (date,), fetch="one")
     return dict(row) if row else None
 
 
-def trades_today(date):
-    rows = _q("SELECT * FROM trades WHERE date=? ORDER BY id", (date,), fetch="all") or []
+def open_trades(date):
+    """आजच्या सर्व उघड्या पोझिशन्स (सर्व सिम्बॉल्स)"""
+    rows = _q("SELECT * FROM trades WHERE status='OPEN' AND date=? ORDER BY id",
+              (date,), fetch="all") or []
     return [dict(r) for r in rows]
 
 
-def month_trades(prefix):
+def trades_today(date, symbol=None):
+    if symbol:
+        rows = _q("SELECT * FROM trades WHERE date=? AND symbol=? ORDER BY id",
+                  (date, symbol), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM trades WHERE date=? ORDER BY id",
+                  (date,), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def month_trades(prefix, symbol=None):
     """'YYYY-MM' उपसर्ग जुळणारे सर्व ट्रेड्स (महिना-दरम्यानच्या आकड्यांसाठी)"""
-    rows = _q("SELECT * FROM trades WHERE date LIKE ? ORDER BY id",
-              (prefix + "%",), fetch="all") or []
+    if symbol:
+        rows = _q("SELECT * FROM trades WHERE date LIKE ? AND symbol=? ORDER BY id",
+                  (prefix + "%", symbol), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM trades WHERE date LIKE ? ORDER BY id",
+                  (prefix + "%",), fetch="all") or []
     return [dict(r) for r in rows]
 
 
-def closed_trades_today(date):
-    return [t for t in trades_today(date) if t["status"] == "CLOSED"]
+def closed_trades_today(date, symbol=None):
+    return [t for t in trades_today(date, symbol) if t["status"] == "CLOSED"]
 
 
-def today_pnl(date):
-    return round(sum((t["pnl"] or 0) for t in closed_trades_today(date)), 2)
+def today_pnl(date, symbol=None):
+    return round(sum((t["pnl"] or 0)
+                     for t in closed_trades_today(date, symbol)), 2)
 
 
 def total_pnl():
@@ -160,9 +189,18 @@ def total_pnl():
     return round(row["s"], 2) if row else 0.0
 
 
-def today_charges(date):
+def total_pnl_symbol(symbol):
+    """एका सिम्बॉलचा सुरुवातीपासूनचा निव्वल P&L"""
+    row = _q("SELECT COALESCE(SUM(pnl),0) AS s FROM trades "
+             "WHERE status='CLOSED' AND symbol=?",
+             (symbol,), fetch="one")
+    return round(row["s"], 2) if row else 0.0
+
+
+def today_charges(date, symbol=None):
     """आजचा एकूण खर्च (ब्रोकरेज+कर) — फक्त पूर्ण झालेल्या ट्रेड्सचा"""
-    return round(sum((t["charges"] or 0) for t in closed_trades_today(date)), 2)
+    return round(sum((t["charges"] or 0)
+                     for t in closed_trades_today(date, symbol)), 2)
 
 
 def total_charges():
