@@ -139,6 +139,13 @@ def trades_today(date):
     return [dict(r) for r in rows]
 
 
+def month_trades(prefix):
+    """'YYYY-MM' उपसर्ग जुळणारे सर्व ट्रेड्स (महिना-दरम्यानच्या आकड्यांसाठी)"""
+    rows = _q("SELECT * FROM trades WHERE date LIKE ? ORDER BY id",
+              (prefix + "%",), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
 def closed_trades_today(date):
     return [t for t in trades_today(date) if t["status"] == "CLOSED"]
 

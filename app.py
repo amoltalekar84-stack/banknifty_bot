@@ -71,6 +71,13 @@ def eval_payload(date=None):
 
     closed = [t for t in trades if t["status"] == "CLOSED"]
     n_tot = wins + losses
+
+    # महिना-दरम्यान (MTD) आकडे — मासिक धोरण-मूल्यांकनासाठी
+    mts = store.month_trades(date[:7])
+    mt_closed = [t for t in mts if t["status"] == "CLOSED"]
+    m_wins = sum(1 for t in mt_closed if (t["pnl"] or 0) >= 0)
+    m_losses = len(mt_closed) - m_wins
+
     return {
         "ok": True,
         "generated_at": n.strftime("%Y-%m-%d %H:%M:%S IST"),
@@ -96,6 +103,20 @@ def eval_payload(date=None):
             "day_charges": store.today_charges(date),
             "total_pnl_net": store.total_pnl(),
             "total_charges": store.total_charges(),
+        },
+        "month": {
+            "month": date[:7],
+            "trades": len(mts),
+            "closed": len(mt_closed),
+            "wins": m_wins, "losses": m_losses,
+            "win_rate_pct": round(100.0 * m_wins / len(mt_closed), 1)
+                            if mt_closed else None,
+            "pnl_net": round(sum((t["pnl"] or 0) for t in mt_closed), 2),
+            "charges": round(sum((t["charges"] or 0) for t in mt_closed), 2),
+            "gross_pnl": round(sum(
+                (float(l.get("price") or 0) - float(t["entry"] or 0))
+                * int(l.get("qty") or 0)
+                for t in mt_closed for l in store.get_legs(t["id"])), 2),
         },
         "rules": {
             "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT,
