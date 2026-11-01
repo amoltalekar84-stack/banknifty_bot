@@ -25,8 +25,8 @@ _pending_live = {}          # chat_id → True (LIVE पुष्टी वा�
 HELP = """🤖 BankNifty AI बॉट — कमांड्स:
 
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
-/code <कोड> — रोज सकाळी Upstox लॉगिन कोड पाठवा ⭐
-/token <टोकन> — (पर्याय) थेट access token पाठवा
+/settoken <टोकन> — थेट access token पाठवा ⭐ 🔒 संदेश आपोआप पुसला जातो
+/code <कोड> — Upstox लॉगिन कोड 🔒 संदेश आपोआप पुसला जातो (पर्याय)
 /status — सध्याची स्थिती
 /positions — उघड्या पोझिशन्स
 /trades — आजचे सर्व ट्रेड्स
@@ -45,6 +45,14 @@ HELP = """🤖 BankNifty AI बॉट — कमांड्स:
 def notify(text):
     """इंजिन → टेलिग्राम अलर्ट (थ्रेड-सेफ क्यु)"""
     NOTIFY_Q.put(text)
+
+
+async def _vanish(update: Update):
+    """🔒 टोकन/कोड असलेला संदेश चॅटमधून लगेच पुसा — इतिहासात काही शिल्लक राहणार नाही"""
+    try:
+        await update.effective_message.delete()
+    except Exception:
+        pass
 
 
 def _admin_id():
@@ -108,11 +116,12 @@ async def cmd_code(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not (C.UPSTOX_CLIENT_ID and C.UPSTOX_CLIENT_SECRET and C.UPSTOX_REDIRECT_URI):
         await update.effective_message.reply_text(
-            "⚠️ Space Secrets मध्ये UPSTOX_CLIENT_ID, UPSTOX_CLIENT_SECRET, "
-            "UPSTOX_REDIRECT_URI सेट करा (README पायरी 3 पहा).")
+            "⚠️ bot.env मध्ये UPSTOX_CLIENT_ID, UPSTOX_CLIENT_SECRET, "
+            "UPSTOX_REDIRECT_URI सेट करा (server वर).")
         return
-    await update.effective_message.reply_text("⏳ टोकन मिळवत आहे...")
     code = ctx.args[0].strip()
+    await _vanish(update)          # 🔒 कोड चॅटमधून गायब
+    prog = await update.effective_message.reply_text("⏳ टोकन मिळवत आहे...")
     loop = asyncio.get_running_loop()
     try:
         tok = await loop.run_in_executor(
@@ -120,42 +129,47 @@ async def cmd_code(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             C.UPSTOX_CLIENT_ID, C.UPSTOX_CLIENT_SECRET, C.UPSTOX_REDIRECT_URI)
         ok, who = await loop.run_in_executor(None, validate_token, tok)
         if not ok:
-            await update.effective_message.reply_text("❌ टोकन अवैध: " + str(who)[:200])
+            await prog.edit_text("❌ टोकन अवैध: " + str(who)[:200])
             return
         store.set_state("upstox_token", tok)
         store.set_state("token_date", ist_now().strftime("%Y-%m-%d"))
-        await update.effective_message.reply_text(
+        await prog.edit_text(
             f"✅ टोकन सेट झाला! स्वागत {who}\n"
             f"आज बॉट स्वयंचलित ट्रेड करेल "
             f"({store.get_state('mode', 'PAPER')} मोड).\n"
-            "🔔 ENTRY/EXIT अलर्ट इथेच येतील.")
+            "🔔 ENTRY/EXIT अलर्ट इथेच येतील.\n"
+            "🔒 कोड चॅटमधून आपोआप पुसला गेला.")
     except UpstoxError as ex:
-        await update.effective_message.reply_text(
+        await prog.edit_text(
             "❌ अयशस्वी: " + str(ex)[:250] +
             "\n\n💡 लक्षात ठेवा: एक code एकदाच वापरता येते — "
             "नवीन लॉगिन URL उघडा व नवीन code घ्या.")
 
 
 async def cmd_token(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """थेट access token (जर तुमच्याकडे आधीच मिळत असेल)"""
+    """/settoken <टोकन> — थेट access token; संदेश आपोआप पुसला जातो 🔒"""
     e = _guard(update.effective_chat.id)
     if e:
         await update.effective_message.reply_text(e)
         return
     if not ctx.args:
-        await update.effective_message.reply_text("वापर: /token <access_token>")
+        await update.effective_message.reply_text(
+            "वापर: /settoken <access_token>\n"
+            "🔒 पाठवलेला संदेश आपोआप पुसला जाईल.")
         return
     tok = ctx.args[0].strip()
-    await update.effective_message.reply_text("⏳ तपासत आहे...")
+    await _vanish(update)          # 🔒 टोकन चॅटमधून गायब!
+    prog = await update.effective_message.reply_text("⏳ तपासत आहे...")
     loop = asyncio.get_running_loop()
     ok, who = await loop.run_in_executor(None, validate_token, tok)
     if not ok:
-        await update.effective_message.reply_text("❌ टोकन अवैध: " + str(who)[:200])
+        await prog.edit_text("❌ टोकन अवैध: " + str(who)[:200])
         return
     store.set_state("upstox_token", tok)
     store.set_state("token_date", ist_now().strftime("%Y-%m-%d"))
-    await update.effective_message.reply_text(
-        f"✅ टोकन सेट! स्वागत {who}\nबॉट स्वयंचलित ट्रेड करेल.")
+    await prog.edit_text(
+        f"✅ टोकन सेट! स्वागत {who}\nबॉट स्वयंचलित ट्रेड करेल.\n"
+        "🔒 टोकन चॅटमधून आपोआप पुसला गेला.")
 
 
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -362,6 +376,7 @@ async def _serve():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("code", cmd_code))
     app.add_handler(CommandHandler("token", cmd_token))
+    app.add_handler(CommandHandler("settoken", cmd_token))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("positions", cmd_positions))
     app.add_handler(CommandHandler("trades", cmd_trades))
