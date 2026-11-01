@@ -9,6 +9,7 @@
 import asyncio
 import queue
 import threading
+import urllib.parse
 from datetime import time as dtime
 
 import config as C
@@ -32,8 +33,9 @@ def _t(s):
 HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
-/settoken <टोकन> — थेट access token पाठवा ⭐ 🔒 संदेश आपोआप पुसला जातो
-/code <कोड> — Upstox लॉगिन कोड 🔒 संदेश आपोआप पुसला जातो (पर्याय)
+/token — आजची लॉग-इन लिंक मागा (रोज सकाळी पहिले पाऊल)
+/code <कोड> — लिंकमधून मिळालेला कोड → बॉट स्वतः टोकन बनवतो ⭐ 🔒 आपोआप पुसला जातो
+/settoken <टोकन> — थेट access token (बॅकअप पर्याय) 🔒 आपोआप पुसला जातो
 /status — सध्याची स्थिती (दोन्ही सिम्बॉल्स)
 /positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
 /trades — आजचे सर्व ट्रेड्स
@@ -156,15 +158,30 @@ async def cmd_code(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_token(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/settoken <टोकन> — थेट access token; संदेश आपोआप पुसला जातो 🔒"""
+    """/token (रिकामा) → आजची लॉग-इन लिंक;  /settoken <टोकन> → थेट access token 🔒"""
     e = _guard(update.effective_chat.id)
     if e:
         await update.effective_message.reply_text(e)
         return
     if not ctx.args:
+        # रोजच्या /code पद्धतीसाठी लॉग-इन लिंक स्वतः पाठवा
+        if not (C.UPSTOX_CLIENT_ID and C.UPSTOX_REDIRECT_URI):
+            await update.effective_message.reply_text(
+                "⚠️ लॉग-इन लिंक साठी server वर bot.env मध्ये UPSTOX_CLIENT_ID "
+                "व UPSTOX_REDIRECT_URI हवे आहेत.\n"
+                "किंवा थेट टोकन पाठवा: /settoken <access_token>")
+            return
+        link = ("https://api.upstox.com/v2/login/authorization/dialog"
+                "?client_id=" + urllib.parse.quote(C.UPSTOX_CLIENT_ID, safe="") +
+                "&redirect_uri=" + urllib.parse.quote(C.UPSTOX_REDIRECT_URI, safe="") +
+                "&response_type=code")
         await update.effective_message.reply_text(
-            "वापर: /settoken <access_token>\n"
-            "🔒 पाठवलेला संदेश आपोआप पुसला जाईल.")
+            "☀️ आजची लॉग-इन लिंक:\n" + link + "\n\n"
+            "1) लिंक उघडा → Upstox लॉग-इन + OTP\n"
+            "2) त्यानंतर ब्राउझरच्या URL मध्ये code=XXXXXX असा भाग दिसेल — "
+            "फक्त code= नंतरचा भाग कॉपी करा\n"
+            "3) इथे पाठवा: /code XXXXXX\n"
+            "मग बॉट स्वतः टोकन बनवेल व तपासेल.")
         return
     tok = ctx.args[0].strip()
     await _vanish(update)          # 🔒 टोकन चॅटमधून गायब!
