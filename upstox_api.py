@@ -9,6 +9,7 @@ import urllib.parse
 import requests
 
 BASE = "https://api.upstox.com/v2"
+BASE_V3 = "https://api.upstox.com/v3"
 
 
 class UpstoxError(Exception):
@@ -119,6 +120,36 @@ def get_prev_close(token, instrument_key, from_date, to_date):
         return None
     rows.sort(key=lambda c: c[0])
     return float(rows[-1][4])
+
+
+def get_hist_candles(token, instrument_key, interval, from_date, to_date):
+    """
+    इतिहासातील कॅन्डल (बॅकटेस्टसाठी).
+    interval: '1minute' / '30minute' / 'day' (Upstox v2)
+    """
+    key_enc = urllib.parse.quote(instrument_key, safe="")
+    url = f"{BASE}/historical-candle/{key_enc}/{interval}/{to_date}/{from_date}"
+    j = _get(url, token)
+    return ((j.get("data") or {}).get("candles")) or []
+
+
+def get_hist_candles_v3(token, instrument_key, unit, interval, from_date, to_date):
+    """
+    v3 historical API — इतर अंतराळ देते (उदा. unit='minutes', interval='5' → 5-मिनिट).
+    उत्तराचे स्वरूप v2 प्रमाणेच [ts,o,h,l,c,v,oi] यादी.
+    """
+    key_enc = urllib.parse.quote(instrument_key, safe="")
+    url = (f"{BASE_V3}/historical-candle/{key_enc}/{unit}/{interval}/"
+           f"{to_date}/{from_date}")
+    j = _get(url, token)
+    d = j.get("data") or {}
+    if isinstance(d, dict):
+        if d.get("candles"):
+            return d["candles"]
+        inner = d.get("data") or {}
+        if isinstance(inner, dict):
+            return inner.get("candles") or []
+    return []
 
 
 def get_option_chain(token, index_key):

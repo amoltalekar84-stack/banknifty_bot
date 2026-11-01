@@ -36,6 +36,7 @@ HELP = """🤖 BankNifty AI बॉट — कमांड्स:
 /mode paper — कागदी मोड (डीफॉल्ट)
 /mode live — प्रत्यक्ष पैशांचा मोड (कुलूपबंद)
 /setcapital 50000 — भांडवल बदला
+/backtest 30 — जुन्या डेटावर धोरणाची चाचणी (सर्व खर्चांसह) 🧪
 /help — हे मेनू"""
 
 
@@ -190,8 +191,8 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 मोड: {mode} | बाजार: {mkt}
 टोकन: {'✅ आहे' if tok else '❌ नाही — /code पाठवा'}
 आजचे ट्रेड्स: {len(store.trades_today(date))}
-आजचा P&L: ₹{store.today_pnl(date):,.0f}
-सुरुवातीपासून P&L: ₹{store.total_pnl():,.0f}
+आजचा निव्वल P&L: ₹{store.today_pnl(date):,.0f} (खर्च ₹{store.today_charges(date):,.0f})
+सुरुवातीपासून निव्वल P&L: ₹{store.total_pnl():,.0f} (एकूण खर्च ₹{store.total_charges():,.0f})
 पोझिशन: {pos_txt}
 पॉज: {'हो' if store.get_state('paused') == '1' else 'नाही'} | KILL: {'🚨 चालू' if store.get_state('killed') == '1' else 'नाही'}"""
     await update.effective_message.reply_text(txt)
@@ -238,8 +239,8 @@ async def cmd_trades(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         icon = "✅" if (t["pnl"] or 0) >= 0 else "❌"
         if t["status"] == "CLOSED":
             lines.append(f"{icon} {t['strike']:.0f} {t['side']}: "
-                         f"₹{t['entry']:.1f} → ₹{t['exit']:.1f} = ₹{t['pnl']:,.0f} "
-                         f"({t['reason']})")
+                         f"₹{t['entry']:.1f} → ₹{t['exit']:.1f} = निव्वळ ₹{t['pnl']:,.0f} "
+                         f"(खर्च ₹{(t['charges'] or 0):,.0f}) ({t['reason']})")
         else:
             lines.append(f"⏳ {t['strike']:.0f} {t['side']}: उघडी @ ₹{t['entry']:.1f}")
     await update.effective_message.reply_text("\n".join(lines))
@@ -332,6 +333,44 @@ async def cmd_setcapital(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.effective_message.reply_text("अवैध रक्कम — उदा. /setcapital 50000")
 
 
+async def cmd_backtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/backtest [दिवस] — ORB धोरण जुन्या खऱ्या डेटावर चालवा (सर्व खर्चांसह)"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    tok = store.get_state("upstox_token")
+    if not tok:
+        await update.effective_message.reply_text(
+            "❌ टोकन नाही — आधी /settoken पाठवा.\n"
+            "(बॅकटेस्टला Upstox चा खरा डेटा लागतो)")
+        return
+    days = 30
+    if ctx.args:
+        try:
+            days = int(ctx.args[0])
+        except (TypeError, ValueError):
+            await update.effective_message.reply_text("वापर: /backtest 30")
+            return
+    prog = await update.effective_message.reply_text(
+        f"⏳ बॅकटेस्ट चालू ({days} दिवस)...\n"
+        "1-2 मिनिटं लागू शकतात — प्रत्येक दिवसाचा खरा डेटा आणला जातो आहे.")
+    loop = asyncio.get_running_loop()
+    import backtest
+    try:
+        txt, _csv = await loop.run_in_executor(
+            None, lambda: backtest.run(days=days))
+        await prog.edit_text(txt)
+    except UpstoxError as ex:
+        if "TOKEN_INVALID" in str(ex):
+            store.set_state("upstox_token", "")
+            await prog.edit_text("❌ टोकन संपले — नवीन /settoken पाठवा")
+        else:
+            await prog.edit_text("❌ बॅकटेस्ट अयशस्वी: " + str(ex)[:250])
+    except Exception as ex:
+        await prog.edit_text("❌ बॅकटेस्ट त्रुटी: " + repr(ex)[:250])
+
+
 async def on_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """साधा मजकूर — LIVE पुष्टी तपासा"""
     chat_id = update.effective_chat.id
@@ -385,6 +424,7 @@ async def _serve():
     app.add_handler(CommandHandler("kill", cmd_kill))
     app.add_handler(CommandHandler("mode", cmd_mode))
     app.add_handler(CommandHandler("setcapital", cmd_setcapital))
+    app.add_handler(CommandHandler("backtest", cmd_backtest))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
 
     await app.initialize()

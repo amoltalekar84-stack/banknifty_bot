@@ -55,6 +55,11 @@ def init_db():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL, msg TEXT);
         """)
+        # जुन्या DB मध्ये charges column नाही → जोडा (migration)
+        try:
+            con.execute("ALTER TABLE trades ADD COLUMN charges REAL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass                      # column आधीच आहे
 
 
 # ---------------- state (सेटिंग्ज/स्थिती) ----------------
@@ -90,9 +95,10 @@ def open_trade(date, mode, side, option_key, strike, expiry, qty, entry, sl, tar
         commit=True)
 
 
-def close_trade(tid, exit_price, pnl, reason, closed):
-    _q("UPDATE trades SET exit=?, pnl=?, status='CLOSED', reason=?, closed=? WHERE id=?",
-       (exit_price, pnl, reason, closed, tid), commit=True)
+def close_trade(tid, exit_price, pnl, reason, closed, charges=0.0):
+    """charges = सर्व खर्च (ब्रोकरेज+STT+GST+...); pnl = निव्वळ (खर्च वजा)"""
+    _q("UPDATE trades SET exit=?, pnl=?, charges=?, status='CLOSED', reason=?, closed=? WHERE id=?",
+       (exit_price, pnl, charges, reason, closed, tid), commit=True)
 
 
 def update_sl(tid, sl):
@@ -125,5 +131,17 @@ def today_pnl(date):
 
 def total_pnl():
     row = _q("SELECT COALESCE(SUM(pnl),0) AS s FROM trades WHERE status='CLOSED'",
+             fetch="one")
+    return round(row["s"], 2) if row else 0.0
+
+
+def today_charges(date):
+    """आजचा एकूण खर्च (ब्रोकरेज+कर) — फक्त पूर्ण झालेल्या ट्रेड्सचा"""
+    return round(sum((t["charges"] or 0) for t in closed_trades_today(date)), 2)
+
+
+def total_charges():
+    """सुरुवातीपासून एकूण खर्च"""
+    row = _q("SELECT COALESCE(SUM(charges),0) AS s FROM trades WHERE status='CLOSED'",
              fetch="one")
     return round(row["s"], 2) if row else 0.0

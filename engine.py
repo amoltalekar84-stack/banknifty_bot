@@ -185,11 +185,13 @@ def _maybe_enter(date, token, now):
         return
 
     emo = "🟢" if sig["side"] == "CE" else "🔴"
+    est_chg = paper.round_trip_charges(tr["entry"], tr["entry"], tr["qty"])
     notify(f"""{emo} ENTRY ({mode})
 📊 {C.INDEX_LABEL} {opt['strike']:.0f} {sig['side']} (एक्सपायरी: {opt['expiry']})
 💰 एंट्री: ₹{tr['entry']:.2f} × {tr['qty']} = ₹{tr['entry']*tr['qty']:,.0f}
 🛑 स्टॉप लॉस: ₹{tr['sl']:.2f}
 🎯 टार्गेट: ₹{tr['target']:.2f}
+🧾 अंदाजे खर्च (2 ऑर्डर + सर्व कर): ₹{est_chg:,.0f}
 📌 OR: {sig['or_high']:.0f} / {sig['or_low']:.0f} | ब्रेकआउट: {sig['breakout']:.0f}
 🕐 {now.strftime('%H:%M:%S')} IST""")
 
@@ -261,18 +263,21 @@ def _monitor(pos, token, now):
 
     mode = pos["mode"]
     if mode == "LIVE":
-        pnl, exitp = _live_close(pos, token, ltp, now, reason)
+        pnl, exitp, chg = _live_close(pos, token, ltp, now, reason)
     else:
-        pnl, exitp = paper.close_trade(pos["id"], ltp, reason,
-                                       now.strftime("%Y-%m-%d %H:%M:%S"))
+        pnl, exitp, chg = paper.close_trade(pos["id"], ltp, reason,
+                                            now.strftime("%Y-%m-%d %H:%M:%S"))
 
+    gross = round((exitp - pos["entry"]) * pos["qty"], 2)
     halted = risk.register_exit(pos["date"], pnl)
     icon = "✅" if pnl >= 0 else "❌"
     msg = f"""{icon} EXIT ({mode}) — {reason}
 📊 {C.INDEX_LABEL} {pos['strike']:.0f} {pos['side']}
 💰 एंट्री ₹{pos['entry']:.2f} → एग्झिट ₹{exitp:.2f}
-📈 P&L: ₹{pnl:,.0f}
-📊 आजचा P&L: ₹{store.today_pnl(pos['date']):,.0f} | एकूण: ₹{store.total_pnl():,.0f}"""
+📈 करपूर्व P&L: ₹{gross:,.0f}
+🧾 खर्च (ब्रोकरेज+STT+GST+स्टॅम्प): ₹{chg:,.0f}
+📉 निव्वळ P&L: ₹{pnl:,.0f}
+📊 आजचा निव्वळ P&L: ₹{store.today_pnl(pos['date']):,.0f} | एकूण: ₹{store.total_pnl():,.0f}"""
     if halted:
         msg += ("\n🛑 दैनिक नुकसान मर्यादा (₹{:,.0f}) ओलांडली — "
                 "आज पुढे कोणताही ट्रेड नाही.".format(-abs(C.MAX_DAILY_LOSS)))
@@ -292,12 +297,12 @@ def _force_close(pos, token, now):
     if ltp is None or ltp <= 0:
         return                                  # पुढील लूपमध्ये पुन्हा प्रयत्न
     if pos["mode"] == "LIVE":
-        pnl, exitp = _live_close(pos, token, ltp, now, "KILL स्विच 🚨")
+        pnl, exitp, chg = _live_close(pos, token, ltp, now, "KILL स्विच 🚨")
     else:
-        pnl, exitp = paper.close_trade(pos["id"], ltp, "KILL स्विच 🚨",
-                                       now.strftime("%Y-%m-%d %H:%M:%S"))
+        pnl, exitp, chg = paper.close_trade(pos["id"], ltp, "KILL स्विच 🚨",
+                                            now.strftime("%Y-%m-%d %H:%M:%S"))
     notify(f"🚨 KILL: पोझिशन बंद केली — {pos['strike']:.0f} {pos['side']}\n"
-           f"एग्झिट ₹{exitp:.2f} | P&L ₹{pnl:,.0f}\n"
+           f"एग्झिट ₹{exitp:.2f} | निव्वळ P&L ₹{pnl:,.0f} (खर्च ₹{chg:,.0f})\n"
            f"परत सुरू करण्यासाठी: /resume")
 
 
@@ -316,10 +321,11 @@ def _live_close(pos, token, ltp, now, reason):
     order_id = place_order(token, pos["option_key"], pos["qty"], "SELL")
     store.log_event(f"LIVE SELL {pos['option_key']} qty={pos['qty']} order={order_id}")
     exitp = round(ltp * (1 - C.SLIPPAGE), 2)
-    pnl = round((exitp - pos["entry"]) * pos["qty"], 2)
+    chg = paper.round_trip_charges(pos["entry"], exitp, pos["qty"])
+    pnl = round((exitp - pos["entry"]) * pos["qty"] - chg, 2)
     store.close_trade(pos["id"], exitp, pnl, reason,
-                      now.strftime("%Y-%m-%d %H:%M:%S"))
-    return pnl, exitp
+                      now.strftime("%Y-%m-%d %H:%M:%S"), chg)
+    return pnl, exitp, chg
 
 
 # ------------------------------------------------------------------
@@ -335,8 +341,8 @@ def _send_summary(date):
     lines = [f"🌇 दैनिक अहवाल — {date}",
              f"मोड: {store.get_state('mode', 'PAPER')}",
              f"एकूण ट्रेड्स: {len(ts)} (पूर्ण: {len(closed)})",
-             f"आजचा P&L: ₹{pnl:,.0f}",
-             f"सुरुवातीपासून एकूण: ₹{store.total_pnl():,.0f}"]
+             f"आजचा निव्वल P&L: ₹{pnl:,.0f} (खर्च ₹{store.today_charges(date):,.0f} वजा)",
+             f"सुरुवातीपासून निव्वल: ₹{store.total_pnl():,.0f} | एकूण खर्च: ₹{store.total_charges():,.0f}"]
     for t in closed:
         icon = "✅" if (t["pnl"] or 0) >= 0 else "❌"
         lines.append(f"{icon} {t['strike']:.0f} {t['side']}: ₹{t['pnl']:,.0f} ({t['reason']})")
