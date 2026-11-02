@@ -97,6 +97,12 @@ def get_state(k, default=None):
     return row["v"] if row else default
 
 
+def get_state_ts(k, default=None):
+    """state कीचा शेवटचा अपडेट-वेळ (epoch) — निदानासाठी (उदा. टोकन कधी सेट झाला)"""
+    row = _q("SELECT ts FROM state WHERE k=?", (str(k),), fetch="one")
+    return row["ts"] if row else default
+
+
 # ---------------- events (लॉग) ----------------
 def log_event(msg):
     _q("INSERT INTO events(ts,msg) VALUES(?,?)",

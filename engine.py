@@ -75,6 +75,7 @@ def _loop():
         except UpstoxError as e:
             if "TOKEN_INVALID" in str(e):
                 store.set_state("upstox_token", "")
+                store.log_event("🚪 टोकन संपला/अवैध (TOKEN_INVALID) — सर्व सिम्बॉल्स थांबले; नवीन /code हवा")
                 notify("⚠️ टोकन अवैध/संपले!\nनवीन टोकन पाठवा: /code XXXXXX किंवा /token XXXXXX")
             else:
                 store.log_event("engine: " + str(e))
@@ -104,6 +105,7 @@ def _tick():
     if not token:
         if now.time() >= _t("08:55") and store.get_state("tokwarn_" + date) != "1":
             store.set_state("tokwarn_" + date, "1")
+            store.log_event("⚠️ बाजार-वेळेत टोकन नाही — सर्व सिम्बॉल्स तटस्थ (उशीर /code?)")
             from telegram_bot import notify
             notify("⚠️ आजचा Upstox टोकन अजून आला नाही!\n"
                    "सकाळी लॉगिन करून /code XXXXXX पाठवा — नाहीतर आज "
@@ -168,6 +170,16 @@ def _maybe_enter(S, date, token, now):
     skey = S["key"]
     notekey = "mktclosed_" + date + "_" + skey
 
+    # एंट्री-विंडो संपल्यावर एकदाच नोंद — आज काही झाले नाही तरी जर्नल/EOD सांगतील
+    if now.time() > _t(S["entry_end"]) and \
+            store.get_state("orbwin_" + date + "_" + skey) != "1":
+        store.set_state("orbwin_" + date + "_" + skey, "1")
+        n_t = len(store.trades_today(date, skey))
+        store.log_event(
+            f"{S['label']}: ORB विंडो ({S['entry_start']}–{S['entry_end']}) संपली — "
+            + (f"आज {n_t} एंट्री झाल्या." if n_t else
+               "आज एकही एंट्री नाही — सिग्नल भेटला नाही किंवा टोकन/डेटा नव्हता."))
+
     if not (_t(S["entry_start"]) <= now.time() <= _t(S["entry_end"])):
         return
 
@@ -175,6 +187,7 @@ def _maybe_enter(S, date, token, now):
     if not dkey:
         if store.get_state("instrnote_" + date + "_" + skey) != "1":
             store.set_state("instrnote_" + date + "_" + skey, "1")
+            store.log_event(f"{S['label']}: कॉन्ट्रॅक्ट डेटा आज मिळाला नाही — आज वगळला")
             notify(f"⚠️ {S['label']} कॉन्ट्रॅक्ट डेटा आज मिळाला नाही — "
                    f"आज {S['short']} वगळला (इतर सिम्बॉल्स सामान्य चालू राहतील).")
         return
@@ -187,6 +200,8 @@ def _maybe_enter(S, date, token, now):
                 store.get_state(notekey) != "1" and \
                 now.time() >= _t("10:00"):
             store.set_state(notekey, "1")
+            store.log_event(f"{S['label']}: कॅन्डल डेटा मिळत नाही "
+                            f"({len(cs)}/{S['min_candles']}) — आज वगळला")
             notify(f"ℹ️ {S['label']}: कॅन्डल डेटा मिळत नाही — "
                    "आज बाजार सुट्टी असावी. बॉट पहरा देत राहील.")
         return

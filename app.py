@@ -14,7 +14,7 @@ import config as C
 import dash
 import store
 from config import ist_now
-from datetime import time as dtime
+from datetime import datetime as _dtm, time as dtime
 from engine import start_engine
 from telegram_bot import start_telegram
 
@@ -142,6 +142,14 @@ def eval_payload(date=None, k: str = ""):
             "market_open": MARKET_OPEN, "market_close": MARKET_CLOSE,
         },
     }
+    # टोकन कधी सेट झाला — निदानासाठी (सकाळी उशीर /code झाला तर ORB विंडो चुकते)
+    try:
+        _ts = store.get_state_ts("token_date")
+        data["flags"]["token_set_at"] = (
+            _dtm.fromtimestamp(_ts, ist_now().tzinfo)
+            .strftime("%Y-%m-%d %H:%M:%S IST") if _ts else None)
+    except Exception:
+        data["flags"]["token_set_at"] = None
     # सर्व MCX सिम्बॉल्सचे स्वतंत्र ब्लॉक: copper / gold / silver / crude / natgas
     for s in C.SYMBOLS:
         if s["mcx"]:

@@ -330,6 +330,15 @@ def _eod_text(date=None):
     lines.append(f"\n💰 <b>आजचे एकूण निव्वल: {_inrn(day_tot)}</b>"
                  f" | सर्वकालीन: {_inrn(store.total_pnl())}"
                  f" (खर्च ₹{store.total_charges():,.0f})")
+    try:                                   # 📜 दिवसभरची मुख्य कारणे — जर्नल
+        evs = store.last_events(3)
+        if evs:
+            lines.append("\n📜 शेवटची कारणे:")
+            for e in reversed(evs):
+                tm = dtm.fromtimestamp(e["ts"], ist_now().tzinfo).strftime("%H:%M")
+                lines.append(f"  {tm} — {str(e['msg'])[:72]}")
+    except Exception:
+        pass
     lines.append("🤖 सर्व स्क्वेअर-ऑफ नियमांनुसार पार पडले — उद्या सकाळी टोकन रिन्यू विसरू नको!")
     return "\n".join(lines)
 
