@@ -253,7 +253,7 @@ with _make_blocks() as demo:
     board = gr.HTML(dash.build_dashboard())
     btn = gr.Button("🔄 रिफ्रेश", elem_id="refresh-btn")
     demo.load(_refresh, None, board)
-    gr.Timer(30).tick(_refresh, None, board)     # दर 30 सेकंदांनी अपडेट
+    gr.Timer(10).tick(_refresh, None, board)     # दर 10 सेकंदांनी अपडेट — जवळपास रिअल-टाइम
     btn.click(_refresh, None, board)
 
 if __name__ == "__main__":

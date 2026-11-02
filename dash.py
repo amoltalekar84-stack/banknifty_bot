@@ -512,7 +512,7 @@ def build_dashboard():
         _overview(n, date),
         '<div class="sec"><span class="t">💹 आजचे ट्रेड्स</span><span class="ln"></span></div>',
         _table(date),
-        f'<div class="foot"><div class="fn">🧪 PAPER मोड — सर्व ऑर्डर कागदी • आपोआप रिफ्रेश दर 30 सेकंद • '
+        f'<div class="foot"><div class="fn">🧪 PAPER मोड — सर्व ऑर्डर कागदी • आपोआप रिफ्रेश दर 10 सेकंद • '
         f'संपूर्ण नियंत्रण Telegram बॉटवर</div>'
         f'<div class="fn m">अपडेट: {n.strftime("%H:%M:%S")} IST</div></div>',
         "</div>",
