@@ -261,9 +261,11 @@ async def cmd_dashkey(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     link = dash.dashboard_link()
     msg = await update.effective_message.reply_text(
-        "🔐 डॅशबोर्डचा गुप्त लिंक (टॅप करा किंवा कॉपी करा):\n\n"
+        "🔐 डॅशबोर्डचा गुप्त लिंक — एकदाच टॅप करा:\n\n"
         + link + "\n\n"
-        "🔒 हा संदेश 60 सेकंदांत आपोआप पुसला जाईल — लिंक आताच कॉपी करा.\n"
+        "✅ उघडताच ब्राउझर 30 दिवस लॉगिन लक्षात ठेवतो — नंतर साधा पत्ता टाइप करूनही "
+        "डॅशबोर्ड उघडेल (की URL मध्ये दिसत नाही).\n"
+        "🔒 हा संदेश 60 सेकंदांत आपोआप पुसला जाईल.\n"
         "💡 पुन्हा हवा असेल तर /dashkey पाठवा.")
     asyncio.create_task(
         _vanish_later(ctx.bot, msg.chat_id, msg.message_id, 60))

@@ -182,6 +182,9 @@ HEAD = (
     "if(!el)return;try{el.textContent=new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Kolkata',"
     "hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());}catch(e){}}"
     "setInterval(tick,1000);})();</script>"
+    '<script>try{var m=location.search.match(/[?&]k=([A-Za-z0-9]+)/);'
+    "if(m){document.cookie='dk='+m[1]+';path=/;max-age=2592000;SameSite=Lax';"
+    "history.replaceState(null,'',location.pathname);}}catch(e){}</script>"
 )
 
 
@@ -205,8 +208,10 @@ def get_or_create_dash_key():
 
 
 def dashboard_link():
-    """Telegram /dashkey साठी संपूर्ण तयार लिंक"""
-    return DASH_URL + "/?k=" + get_or_create_dash_key()
+    """Telegram /dashkey साठी संपूर्ण तयार लिंक — एकदा उघडले की /login
+    ब्राउझरमध्ये 30-दिवसांची गुप्त कुकी बसवते व स्वच्छ URL वर नेते;
+    नंतर की कुठेच (अ‍ॅड्रेस बार/history/लॉग्स) दिसत नाही."""
+    return DASH_URL + "/login?k=" + get_or_create_dash_key()
 
 
 LOCKED_HTML = """
@@ -214,10 +219,9 @@ LOCKED_HTML = """
   <div class="gx" style="max-width:440px;padding:36px 32px;text-align:center;border-radius:20px">
     <div style="font-size:46px">🔒</div>
     <div style="font-size:19px;font-weight:800;color:#f1f5f9;margin-top:12px">खाजगी डॅशबोर्ड</div>
-    <div style="font-size:13px;color:#8ea0b9;margin-top:10px;line-height:1.8">हे पान पाहण्यासाठी गुप्त की लागते.<br>
-    योग्य लिंक अशी दिसेल: <b style="color:#7dd3fc">…:7860/?k=गुप्त-की</b><br>
+    <div style="font-size:13px;color:#8ea0b9;margin-top:10px;line-height:1.8">हे पान फक्त गुप्त लिंकने उघडते.<br>
     की विसरलात? Telegram बॉटवर <b style="color:#fcd34d">/dashkey</b> पाठवा —
-    लिंक तिथून मिळेल (संदेश आपोआप पुसला जातो).</div>
+    एकदा उघडले की ब्राउझर 30 दिवस लॉगिन लक्षात ठेवतो.</div>
   </div>
 </div>"""
 

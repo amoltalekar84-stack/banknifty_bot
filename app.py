@@ -245,9 +245,10 @@ def _refresh():
 
 
 def _load_gate(request: gr.Request):
-    """पान प्रथम उघडतानाच — URL मध्ये ?k=गुप्तकी असल्यासच डॅशबोर्ड;
-    नसेल तर लॉक स्क्रीन (डेटा पानावर येतच नाही).
+    """पान प्रथम उघडतानाच — URL मध्ये ?k=गुप्तकी किंवा ब्राउझरमध्ये वैध dk कुकी
+    (ही फक्त /login मार्फत बसते) असल्यासच डॅशबोर्ड; नसेल तर लॉक स्क्रीन.
     परत (HTML, unlocked_flag) — flag नंतरच्या timer/refresh साठी."""
+    key = dash.get_or_create_dash_key()
     try:
         qp = getattr(request, "query_params", None)
         if qp is None:
@@ -255,7 +256,16 @@ def _load_gate(request: gr.Request):
         k = (qp.get("k") or "") if hasattr(qp, "get") else ""
     except Exception:
         k = ""
-    ok = bool(k) and k == dash.get_or_create_dash_key()
+    if not k:
+        # /login ने बसवलेली 30-दिवसांची कुकी — नंतरच्या भेटींसाठी URL शिवाय अनलॉक
+        try:
+            hd = getattr(request, "headers", None)
+            raw = (hd.get("cookie") or "") if hasattr(hd, "get") else ""
+            m = re.search(r"(?:^|;\s*)dk=([A-Za-z0-9]+)", raw)
+            k = m.group(1) if m else ""
+        except Exception:
+            k = ""
+    ok = bool(k) and k == key
     return (dash.build_dashboard() if ok else dash.LOCKED_HTML), ok
 
 
@@ -307,6 +317,28 @@ if __name__ == "__main__":
         if _fapi is not None:
             _fapi.get("/api/eval")(eval_payload)
             print("✅ /api/eval endpoint सुरू")
+            # /login — गुप्त की दिल्यास 30-दिवसांची HttpOnly कुकी बसवून
+            # स्वच्छ URL वर redirect (म्हणजे की कधीच अ‍ॅड्रेस बार/history मध्ये राहत नाही)
+            try:
+                from fastapi.responses import HTMLResponse, RedirectResponse
+
+                def _login(k: str = ""):
+                    if k and k == dash.get_or_create_dash_key():
+                        r = RedirectResponse("/", status_code=302)
+                        r.set_cookie("dk", k, max_age=60 * 60 * 24 * 30,
+                                     httponly=True, samesite="lax")
+                        return r
+                    return HTMLResponse(
+                        "<html><head><meta charset='utf-8'>"
+                        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                        "<title>लॉक</title></head>"
+                        "<body style='margin:0;background:#0b0f19'>"
+                        + dash.LOCKED_HTML + "</body></html>")
+
+                _fapi.get("/login")(_login)
+                print("✅ /login (कुकी-लॉगिन) endpoint सुरू")
+            except Exception as e:
+                print("⚠️ /login जोडण्यात अडचण:", repr(e))
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as e:
