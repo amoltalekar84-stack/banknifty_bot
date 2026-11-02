@@ -10,7 +10,7 @@ import asyncio
 import queue
 import threading
 import urllib.parse
-from datetime import time as dtime
+from datetime import datetime as dtm, time as dtime
 
 import config as C
 import dash
@@ -41,6 +41,7 @@ HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 /dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
 /positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
 /trades — आजचे सर्व ट्रेड्स
+/eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
 /pause — नवीन ट्रेड थांबवा (दोन्ही)
 /resume — पुन्हा सुरू
 /kill — 🚨 इमर्जन्सी: सगळं बंद + पोझिशन बंद
@@ -269,6 +270,111 @@ async def cmd_dashkey(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "💡 पुन्हा हवा असेल तर /dashkey पाठवा.")
     asyncio.create_task(
         _vanish_later(ctx.bot, msg.chat_id, msg.message_id, 60))
+
+
+# ------------------------------------------------------------------
+# 🌙 EOD — दिवस-समाप्ती अहवाल (कमांड + रात्री 23:10 ला आपोआप)
+# ------------------------------------------------------------------
+_WD = ("सोमवार", "मंगळवार", "बुधवार", "गुरुवार", "शुक्रवार", "शनिवार", "रविवार")
+
+
+def _inrn(v):
+    """₹ फॉरमॅट — नकारी असल्यास −₹810 असा (मायनस ₹ च्या आधी)"""
+    v = float(v or 0)
+    return ("−₹" if v < 0 else "₹") + f"{abs(v):,.0f}"
+
+
+def _eod_text(date=None):
+    """सर्व सक्रिय सिम्बॉल्सचा दिवस-समाप्ती सारांश (HTML मजकूर)"""
+    n = ist_now()
+    date = date or n.strftime("%Y-%m-%d")
+    try:
+        wd = _WD[dtm.strptime(date, "%Y-%m-%d").weekday()]
+    except ValueError:
+        wd = _WD[n.weekday()]
+    mode = store.get_state("mode", "PAPER")
+    tok_date = store.get_state("token_date")
+    flags = []
+    if store.get_state("killed") == "1":
+        flags.append("🚨 KILL")
+    if store.get_state("paused") == "1":
+        flags.append("⏸ पॉज")
+    lines = [f"🌙 <b>EOD अहवाल — {date} ({wd})</b>",
+             f"मोड: {mode} | टोकन: "
+             + ("✅ आजचा" if tok_date == date else "⚠️ जुना/नाही — उद्या /code विसरू नको")
+             + ((" | " + " ".join(flags)) if flags else "")]
+    day_tot = 0.0
+    for S in C.active_symbols():
+        d = store.today_pnl(date, S["key"])
+        chg = store.today_charges(date, S["key"])
+        trs = store.trades_today(date, S["key"])
+        closed = [t for t in trs if t["status"] == "CLOSED"]
+        w = sum(1 for t in closed if (t["pnl"] or 0) >= 0)
+        l = len(closed) - w
+        op = store.get_open_trade(date, S["key"])
+        halt = store.get_state(f"halt_{date}_{S['key']}") == "1"
+        mts = [t for t in store.month_trades(date[:7], S["key"])
+               if t["status"] == "CLOSED"]
+        mtd = sum((t["pnl"] or 0) for t in mts)
+        tot = store.total_pnl_symbol(S["key"])
+        day_tot += d
+        icon = "🟢" if d > 0 else ("🔴" if d < 0 else "⚪")
+        lines.append(
+            f"\n{icon} <b>{S['label']}</b>"
+            + (" ⛔ दैनिक-हॉल्ट" if halt else "")
+            + (f"\n   ट्रेड {len(trs)} | जिंक {w} • हरले {l}"
+               f" | दिवस {_inrn(d)} (खर्च ₹{chg:,.0f})"
+               if trs else "\n   ट्रेड 0 | दिवस ₹0")
+            + ("\n   ⚠️ पोझिशन अजून OPEN!" if op else "\n   सर्व पोझिशन बंद ✅")
+            + f"\n   MTD {_inrn(mtd)} | सुरुवातीपासून {_inrn(tot)}")
+    lines.append(f"\n💰 <b>आजचे एकूण निव्वल: {_inrn(day_tot)}</b>"
+                 f" | सर्वकालीन: {_inrn(store.total_pnl())}"
+                 f" (खर्च ₹{store.total_charges():,.0f})")
+    lines.append("🤖 सर्व स्क्वेअर-ऑफ नियमांनुसार पार पडले — उद्या सकाळी टोकन रिन्यू विसरू नको!")
+    return "\n".join(lines)
+
+
+async def cmd_eod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/eod — आजचा दिवस-समाप्ती अहवाल तत्काळ"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    txt = _eod_text()
+    try:
+        await update.effective_message.reply_text(txt, parse_mode="HTML")
+    except Exception:
+        await update.effective_message.reply_text(txt)
+
+
+async def _eod_loop(app):
+    """🌙 रोज रात्री 23:10 IST (सर्व स्क्वेअर-ऑफ नंतर) — EOD अहवाल आपोआप"""
+    while True:
+        try:
+            n = ist_now()
+            if n.weekday() < 5 and n.hour == 23 and n.minute >= 10:
+                date = n.strftime("%Y-%m-%d")
+                if store.get_state("eod_sent_" + date) != "1":
+                    a = _admin_id()
+                    if a:
+                        txt = _eod_text(date)
+                        sent = False
+                        try:
+                            await app.bot.send_message(chat_id=a, text=txt,
+                                                       parse_mode="HTML")
+                            sent = True
+                        except Exception:
+                            try:
+                                await app.bot.send_message(chat_id=a, text=txt)
+                                sent = True
+                            except Exception as ex2:
+                                print("EOD send fail:", repr(ex2))
+                        if sent:
+                            store.set_state("eod_sent_" + date, "1")
+                            store.log_event("🌙 EOD अहवाल आपोआप पाठवला")
+        except Exception as e:
+            print("EOD loop err:", repr(e))
+        await asyncio.sleep(60)
 
 
 async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -583,6 +689,7 @@ async def _serve():
     app.add_handler(CommandHandler("dashkey", cmd_dashkey))
     app.add_handler(CommandHandler("positions", cmd_positions))
     app.add_handler(CommandHandler("trades", cmd_trades))
+    app.add_handler(CommandHandler("eod", cmd_eod))
     app.add_handler(CommandHandler("pause", cmd_pause))
     app.add_handler(CommandHandler("resume", cmd_resume))
     app.add_handler(CommandHandler("kill", cmd_kill))
@@ -601,6 +708,7 @@ async def _serve():
     await app.updater.start_polling(drop_pending_updates=True)
     print("Telegram bot polling started")
     asyncio.create_task(_drain(app))
+    asyncio.create_task(_eod_loop(app))   # 🌙 रात्री 23:10 ला आपोआप EOD
     while True:
         await asyncio.sleep(3600)
 

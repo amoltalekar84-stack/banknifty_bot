@@ -146,6 +146,12 @@ def eval_payload(date=None, k: str = ""):
     for s in C.SYMBOLS:
         if s["mcx"]:
             data[s["key"].lower()] = _sym_payload(s, date)
+    # बॉट जर्नल — शेवटचे इव्हेंट (EOD रिपोर्ट/पडताळणीसाठी)
+    try:
+        data["events"] = [{"ts": e["ts"], "msg": str(e.get("msg", ""))}
+                          for e in store.last_events(10)]
+    except Exception:
+        data["events"] = []
     return data
 
 
