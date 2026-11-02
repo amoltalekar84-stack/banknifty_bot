@@ -8,7 +8,9 @@ from datetime import time as dtime
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import html as _h
+import os
 import re as _re
+import secrets
 
 import config as C
 import store
@@ -162,10 +164,10 @@ padding:11px 13px;border-bottom:1px solid rgba(148,163,184,.16);font-weight:700}
 .dash .empty small{color:#475569}
 .dash .foot{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:20px;flex-wrap:wrap}
 .dash .fn{font-size:11.5px;color:#64748b}
-#refresh-btn button{background:linear-gradient(135deg,#6366f1,#0ea5e9)!important;color:#fff!important;
-border:none!important;border-radius:12px!important;font-weight:700!important;font-size:14px!important;
+#refresh-btn button,#refresh-btn,#refresh-btn>div{background:linear-gradient(135deg,#6366f1,#0ea5e9)!important;
+color:#fff!important;border:none!important;border-radius:12px!important;font-weight:700!important;font-size:14px!important;
 padding:10px 26px!important;box-shadow:0 10px 24px -8px rgba(99,102,241,.6)!important;transition:transform .15s!important}
-#refresh-btn button:hover{transform:translateY(-2px)!important}
+#refresh-btn button:hover,#refresh-btn:hover{transform:translateY(-2px)!important}
 @media(max-width:1100px){.dash .syms{grid-template-columns:repeat(2,1fr)}.dash .kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.dash .syms{grid-template-columns:1fr}.dash .kpis{grid-template-columns:repeat(2,1fr)}.dash .duo{grid-template-columns:1fr}}
 """.replace("MONOFONT", _MONO)
@@ -181,6 +183,43 @@ HEAD = (
     "hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date());}catch(e){}}"
     "setInterval(tick,1000);})();</script>"
 )
+
+
+# ----------------------------------------------------------------
+# गुप्त की-लॉक — डॅशबोर्ड फक्त /?k=गुप्तकी असल्यासच उघडेल
+# bot.env मध्ये DASH_KEY दिल्यास तोच (रीबूटवरही टिकतो);
+# नसेल तर पहिल्यांदा वापरल्यावर आपोआप नवीन तयार (state मध्ये).
+# ----------------------------------------------------------------
+DASH_URL = os.getenv("DASH_PUBLIC_URL", "http://130.210.62.151:7860")
+
+
+def get_or_create_dash_key():
+    k = (os.getenv("DASH_KEY") or "").strip()
+    if k:
+        return k
+    k = store.get_state("dash_key")
+    if not k:
+        k = secrets.token_hex(8)
+        store.set_state("dash_key", k)
+    return k
+
+
+def dashboard_link():
+    """Telegram /dashkey साठी संपूर्ण तयार लिंक"""
+    return DASH_URL + "/?k=" + get_or_create_dash_key()
+
+
+LOCKED_HTML = """
+<div class="dash" style="display:flex;align-items:center;justify-content:center;min-height:92vh">
+  <div class="gx" style="max-width:440px;padding:36px 32px;text-align:center;border-radius:20px">
+    <div style="font-size:46px">🔒</div>
+    <div style="font-size:19px;font-weight:800;color:#f1f5f9;margin-top:12px">खाजगी डॅशबोर्ड</div>
+    <div style="font-size:13px;color:#8ea0b9;margin-top:10px;line-height:1.8">हे पान पाहण्यासाठी गुप्त की लागते.<br>
+    योग्य लिंक अशी दिसेल: <b style="color:#7dd3fc">…:7860/?k=गुप्त-की</b><br>
+    की विसरलात? Telegram बॉटवर <b style="color:#fcd34d">/dashkey</b> पाठवा —
+    लिंक तिथून मिळेल (संदेश आपोआप पुसला जातो).</div>
+  </div>
+</div>"""
 
 
 # ---------------------------------------------------------------- helpers

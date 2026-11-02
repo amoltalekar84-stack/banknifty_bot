@@ -13,6 +13,7 @@ import urllib.parse
 from datetime import time as dtime
 
 import config as C
+import dash
 import paper
 import store
 from config import ist_now
@@ -37,6 +38,7 @@ HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 /code <कोड> — लिंकमधून मिळालेला कोड → बॉट स्वतः टोकन बनवतो ⭐ 🔒 आपोआप पुसला जातो
 /settoken <टोकन> — थेट access token (बॅकअप पर्याय) 🔒 आपोआप पुसला जातो
 /status — सध्याची स्थिती (दोन्ही सिम्बॉल्स)
+/dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
 /positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
 /trades — आजचे सर्व ट्रेड्स
 /pause — नवीन ट्रेड थांबवा (दोन्ही)
@@ -240,6 +242,31 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         import re as _re
         await update.effective_message.reply_text(
             _re.sub(r"</?b>", "", "\n".join(lines)))
+
+
+async def _vanish_later(bot, chat_id, message_id, delay=60):
+    """🔒 पाठवलेला संदेश थोड्या वेळाने चॅटमधून आपोआप पुसा"""
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+async def cmd_dashkey(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/dashkey — डॅशबोर्डचा गुप्त लिंक; 🔒 60 सेकंदांत आपोआप पुसला जातो"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    link = dash.dashboard_link()
+    msg = await update.effective_message.reply_text(
+        "🔐 डॅशबोर्डचा गुप्त लिंक (टॅप करा किंवा कॉपी करा):\n\n"
+        + link + "\n\n"
+        "🔒 हा संदेश 60 सेकंदांत आपोआप पुसला जाईल — लिंक आताच कॉपी करा.\n"
+        "💡 पुन्हा हवा असेल तर /dashkey पाठवा.")
+    asyncio.create_task(
+        _vanish_later(ctx.bot, msg.chat_id, msg.message_id, 60))
 
 
 async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -551,6 +578,7 @@ async def _serve():
     app.add_handler(CommandHandler("token", cmd_token))
     app.add_handler(CommandHandler("settoken", cmd_token))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("dashkey", cmd_dashkey))
     app.add_handler(CommandHandler("positions", cmd_positions))
     app.add_handler(CommandHandler("trades", cmd_trades))
     app.add_handler(CommandHandler("pause", cmd_pause))

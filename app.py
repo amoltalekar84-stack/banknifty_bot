@@ -38,10 +38,14 @@ def _mcx_open():
 # ------------------------------------------------------------------
 # /api/eval — दैनिक मूल्यांकन डेटा (फक्त वाचन; कोणतीही गुप्त माहिती नाही)
 # ------------------------------------------------------------------
-def eval_payload(date=None):
-    """?date=YYYY-MM-DD (नसेल तर आज) — दिवसभरचे ट्रेड + खर्च + नियम-माहिती.
+def eval_payload(date=None, k: str = ""):
+    """?date=YYYY-MM-DD (नसेल तर आज) + ?k=गुप्त-की (लागतेच).
+    दिवसभरचे ट्रेड + खर्च + नियम-माहिती.
     वरचा भाग (trades/summary/month/rules) = BANKNIFTY (जुने स्वरूप अबाधित);
     "copper" block = COPPER चे स्वतंत्र आकडे."""
+    if k != dash.get_or_create_dash_key():
+        return {"ok": False, "error": "locked",
+                "hint": "गुप्त की हवी: URL ला ?k=… जोडा (Telegram वर /dashkey)"}
     from config import (CAPITAL, LOT_SIZE, MARKET_CLOSE, MARKET_OPEN,
                         MAX_DAILY_LOSS, MAX_TRADES_PER_DAY, SL_PCT,
                         SQUARE_OFF, TARGET_PCT, TP1_PCT, TP3_PCT)
@@ -240,6 +244,26 @@ def _refresh():
     return dash.build_dashboard()
 
 
+def _load_gate(request: gr.Request):
+    """पान प्रथम उघडतानाच — URL मध्ये ?k=गुप्तकी असल्यासच डॅशबोर्ड;
+    नसेल तर लॉक स्क्रीन (डेटा पानावर येतच नाही).
+    परत (HTML, unlocked_flag) — flag नंतरच्या timer/refresh साठी."""
+    try:
+        qp = getattr(request, "query_params", None)
+        if qp is None:
+            qp = getattr(getattr(request, "request", None), "query_params", {}) or {}
+        k = (qp.get("k") or "") if hasattr(qp, "get") else ""
+    except Exception:
+        k = ""
+    ok = bool(k) and k == dash.get_or_create_dash_key()
+    return (dash.build_dashboard() if ok else dash.LOCKED_HTML), ok
+
+
+def _refresh_gate(unlocked):
+    """timer/refresh — फक्त load वेळी की जुळली असल्यासच डॅशबोर्ड परत येतो"""
+    return dash.build_dashboard() if unlocked else dash.LOCKED_HTML
+
+
 def _make_blocks():
     """head param जुन्या Gradio मध्ये नसेल तरी डॅशबोर्ड चालण्यासाठी fallback"""
     try:
@@ -250,21 +274,30 @@ def _make_blocks():
 
 
 with _make_blocks() as demo:
-    board = gr.HTML(dash.build_dashboard())
+    board = gr.HTML(dash.LOCKED_HTML)          # सुरुवातीला नेहमी लॉक (की-विना डेटा नाही)
+    unlocked = gr.State(False)                 # की जुळली का? (लोड वेळी ठरते)
     btn = gr.Button("🔄 रिफ्रेश", elem_id="refresh-btn")
-    demo.load(_refresh, None, board)
-    gr.Timer(10).tick(_refresh, None, board)     # दर 10 सेकंदांनी अपडेट — जवळपास रिअल-टाइम
-    btn.click(_refresh, None, board)
+    demo.load(_load_gate, None, [board, unlocked])
+    gr.Timer(10).tick(_refresh_gate, unlocked, board)   # दर 10 सेकंदांनी — फक्त अनलॉक असल्यास
+    btn.click(_refresh_gate, unlocked, board)
 
 if __name__ == "__main__":
     # Render आपोआप PORT env var देतो; स्थानिक चाचणीसाठी 7860
     _port = int(os.environ.get("PORT", "7860"))
+
+    def _launch(d, **kw):
+        """Gradio 6: css/head launch() ला; Gradio 5: Blocks() ला — दोन्ही हाताळा"""
+        try:
+            return d.launch(css=dash.CSS, head=dash.HEAD, **kw)
+        except TypeError:
+            return d.launch(**kw)
+
     _fapi = None
     try:
         # prevent_thread_lock=True → launch() FastAPI app परत देतो;
         # त्यावरच /api/eval जोडून मग मुख्य थ्रेड ब्लॉक करू (जुन्या पद्धतीप्रमाणेच)
-        _res = demo.launch(server_name="0.0.0.0", server_port=_port,
-                           prevent_thread_lock=True)
+        _res = _launch(demo, server_name="0.0.0.0", server_port=_port,
+                       prevent_thread_lock=True)
         if isinstance(_res, tuple):
             _fapi = _res[0]
         elif _res is not None and hasattr(_res, "get"):
@@ -284,4 +317,4 @@ if __name__ == "__main__":
         except (KeyboardInterrupt, SystemExit):
             pass
     else:
-        demo.launch(server_name="0.0.0.0", server_port=_port)
+        _launch(demo, server_name="0.0.0.0", server_port=_port)
