@@ -11,6 +11,7 @@ import re
 import gradio as gr
 
 import config as C
+import dash
 import store
 from config import ist_now
 from datetime import time as dtime
@@ -232,89 +233,28 @@ def _sym_payload(S, date):
     }
 
 
-def dashboard():
-    n = ist_now()
-    date = n.strftime("%Y-%m-%d")
-    mode = store.get_state("mode", "PAPER")
-    badges = []
-    if store.get_state("killed") == "1":
-        badges.append("🚨KILL")
-    if store.get_state("paused") == "1":
-        badges.append("⏸पॉज")
-    for s in C.SYMBOLS:
-        if store.get_state("halt_" + date + "_" + s["key"]) == "1":
-            badges.append("🛑" + s["short"])
-    mode_txt = mode + (" " + " ".join(badges) if badges else "")
-
-    tok = "✅ आहे" if store.get_state("upstox_token") else "❌ नाही (Telegram वर /code पाठवा)"
-
-    pos_lines = []
-    for S in C.active_symbols():
-        pos = store.get_open_trade(date, S["key"])
-        if pos:
-            pos_lines.append(f"{S['short']}: {pos['strike']:.0f} {pos['side']} "
-                             f"@ ₹{pos['entry']:.2f} (SL ₹{pos['sl']:.2f})")
-    pos_txt = " | ".join(pos_lines) if pos_lines else "—"
-
-    rows = []
-    for t in store.trades_today(date):
-        rows.append([
-            (t["opened"] or "")[-8:-3] if t["opened"] else "—",
-            (t.get("symbol") or "BANKNIFTY"),
-            f"{t['strike']:.0f}",
-            t["side"],
-            t["qty"],
-            f"₹{t['entry']:.2f}",
-            f"₹{t['exit']:.2f}" if t["exit"] else "—",
-            (f"₹{t['pnl']:,.0f}" if t["pnl"] is not None else "—"),
-            t["status"] + (f" ({t['reason']})" if t["reason"] else ""),
-        ])
-    if not rows:
-        rows = [["—", "—", "—", "—", "—", "—", "—", "—", "अजून ट्रेड नाही"]]
-
-    day_pnl = " | ".join(
-        f"{s['short']} ₹{store.today_pnl(date, s['key']):,.0f}"
-        for s in C.active_symbols())
-    return (mode_txt,
-            f"BN {_market_open()} | MCX {_mcx_open()}", tok,
-            day_pnl,
-            f"₹{store.total_pnl():,.0f}",
-            pos_txt, rows)
+# ------------------------------------------------------------------
+# डॅशबोर्ड UI — "Midnight Terminal Pro" (dash.py मधून)
+# ------------------------------------------------------------------
+def _refresh():
+    return dash.build_dashboard()
 
 
-_cap_txt = " + ".join(
-    (f"BANKNIFTY (₹{C.CAPITAL:,.0f})" if s["key"] == "BANKNIFTY"
-     else f"{s['short']} (₹{s['capital']:,.0f})")
-    for s in C.SYMBOLS)
-_halt_txt = " / ".join(
-    (f"₹{C.MAX_DAILY_LOSS:,.0f} (BN)" if s["key"] == "BANKNIFTY"
-     else f"₹{s['max_daily_loss']:,.0f} ({s['short']})")
-    for s in C.SYMBOLS)
+def _make_blocks():
+    """head param जुन्या Gradio मध्ये नसेल तरी डॅशबोर्ड चालण्यासाठी fallback"""
+    try:
+        return gr.Blocks(title="BankNifty + MCX AI Bot",
+                         css=dash.CSS, head=dash.HEAD)
+    except TypeError:
+        return gr.Blocks(title="BankNifty + MCX AI Bot", css=dash.CSS)
 
-with gr.Blocks(title="BankNifty + MCX AI Bot") as demo:
-    gr.Markdown(
-        "# 🤖 BankNifty + MCX AI Trading Bot (6 सिम्बॉल्स)\n"
-        "**PAPER mode** — कागदी ट्रेडिंग (पैसे धोक्यात नाही). "
-        "संपूर्ण नियंत्रण तुमच्या Telegram बॉटवर.\n\n"
-        f"{_cap_txt} — सर्व स्वतंत्र भांडवल | "
-        f"ORB | SL: -{C.SL_PCT:.0f}% | टार्गेट: +{C.TARGET_PCT:.0f}% | "
-        f"दैनिक तोटा मर्यादा: {_halt_txt}")
-    with gr.Row():
-        m_mode = gr.Textbox(label="मोड", interactive=False)
-        m_mkt = gr.Textbox(label="बाजार (BN | MCX)", interactive=False)
-        m_tok = gr.Textbox(label="Upstox टोकन", interactive=False)
-    with gr.Row():
-        m_day = gr.Textbox(label="आजचा P&L (सर्व सिम्बॉल्स)", interactive=False)
-        m_tot = gr.Textbox(label="सुरुवातीपासून P&L (एकूण)", interactive=False)
-        m_pos = gr.Textbox(label="उघड्या पोझिशन्स", interactive=False)
-    tbl = gr.DataFrame(
-        headers=["वेळ", "सिम्बॉल", "स्ट्राइक", "SIDE", "Qty", "एंट्री", "एग्झिट", "P&L", "स्थिती"],
-        label="आजचे ट्रेड्स", interactive=False)
-    btn = gr.Button("🔄 रिफ्रेश")
-    outs = [m_mode, m_mkt, m_tok, m_day, m_tot, m_pos, tbl]
-    demo.load(dashboard, None, outs)
-    gr.Timer(30).tick(dashboard, None, outs)     # दर 30 सेकंदांनी अपडेट
-    btn.click(dashboard, None, outs)
+
+with _make_blocks() as demo:
+    board = gr.HTML(dash.build_dashboard())
+    btn = gr.Button("🔄 रिफ्रेश", elem_id="refresh-btn")
+    demo.load(_refresh, None, board)
+    gr.Timer(30).tick(_refresh, None, board)     # दर 30 सेकंदांनी अपडेट
+    btn.click(_refresh, None, board)
 
 if __name__ == "__main__":
     # Render आपोआप PORT env var देतो; स्थानिक चाचणीसाठी 7860
