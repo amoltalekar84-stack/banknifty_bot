@@ -97,8 +97,10 @@ def eval_payload(date=None):
         "flags": {
             "killed": store.get_state("killed") == "1",
             "paused": store.get_state("paused") == "1",
-            "daily_halt": store.get_state("halt_" + date + "_BANKNIFTY") == "1",
+            "daily_halt": any(store.get_state("halt_" + date + "_" + s["key"]) == "1"
+                              for s in C.active_symbols()),
             "token_present": bool(store.get_state("upstox_token")),
+            "token_date": store.get_state("token_date"),
             "last_skip_note": store.get_state("blockednote_" + date + "_BANKNIFTY"),
         },
         "trades": trades,
