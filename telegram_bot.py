@@ -35,8 +35,8 @@ HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
 
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
 /token — आजची लॉग-इन लिंक मागा (रोज सकाळी पहिले पाऊल)
-/code <कोड> — लिंकमधून मिळालेला कोड → बॉट स्वतः टोकन बनवतो ⭐ 🔒 आपोआप पुसला जातो
-/settoken <टोकन> — थेट access token (बॅकअप पर्याय) 🔒 आपोआप पुसला जातो
+/code <कोड> — लिंक उघडून लॉग-इन केल्यावर URL मधला लहान code → बॉट स्वतः टोकन बनवतो ⭐ (रोज फक्त हे पुरेसे!) 🔒 आपोआप पुसला जातो
+/settoken <टोकन> — लांब eyJ… access token असेल तरच थेट (बॅकअप — /code ची जागा घेतो, दोन्हीची गरज नाही) 🔒 आपोआप पुसला जातो
 /status — सध्याची स्थिती (दोन्ही सिम्बॉल्स)
 /dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
 /positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
@@ -216,8 +216,20 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     mode = store.get_state("mode", "PAPER")
     tok = store.get_state("upstox_token")
     import config as _C
+    # इंजिन जिवंत आहे का? (हृदयस्पंदन 30 सेकंदांनी लिहिले जाते)
+    eng = "⚙️ सुरू होत आहे…"
+    beat = store.get_state("engine_beat") or ""
+    if beat:
+        try:
+            _bt = dtm.strptime(beat, "%Y-%m-%d %H:%M:%S")
+            _age = (now.replace(tzinfo=None) - _bt).total_seconds()
+            eng = (f"✅ जिवंत (पहरा {_bt.strftime('%H:%M:%S')})" if _age <= 600
+                   else f"🚨 थांबला! (शेवटचा पहरा {_bt.strftime('%H:%M:%S')})")
+        except Exception:
+            pass
     lines = [f"📊 स्थिती ({now.strftime('%H:%M')} IST)",
              f"मोड: {mode} | टोकन: {'✅ आहे' if tok else '❌ नाही — /code पाठवा'}",
+             f"इंजिन: {eng}",
              f"पॉज: {'हो' if store.get_state('paused') == '1' else 'नाही'} | "
              f"KILL: {'🚨 चालू' if store.get_state('killed') == '1' else 'नाही'}"]
     for S in _C.active_symbols():

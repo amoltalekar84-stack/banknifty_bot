@@ -150,6 +150,19 @@ def eval_payload(date=None, k: str = ""):
             .strftime("%Y-%m-%d %H:%M:%S IST") if _ts else None)
     except Exception:
         data["flags"]["token_set_at"] = None
+    # इंजिन हृदयस्पंदन — जिवंत आहे का? (watchdog अपयश/थांबणे उघड करण्यासाठी)
+    try:
+        _beat = store.get_state("engine_beat") or ""
+        if _beat:
+            _bt = _dtm.strptime(_beat, "%Y-%m-%d %H:%M:%S")
+            _age = (ist_now().replace(tzinfo=None) - _bt).total_seconds()
+        else:
+            _age = None
+        data["flags"]["engine_beat"] = _beat or None
+        data["flags"]["engine_alive"] = (_age is not None and _age <= 600)
+    except Exception:
+        data["flags"]["engine_beat"] = None
+        data["flags"]["engine_alive"] = False
     # सर्व MCX सिम्बॉल्सचे स्वतंत्र ब्लॉक: copper / gold / silver / crude / natgas
     for s in C.SYMBOLS:
         if s["mcx"]:

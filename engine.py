@@ -17,10 +17,11 @@ MCX (Copper/Gold/Silver/Crude/NatGas): प्रत्येकी स्वत�
   ऑप्शनचा खरा lot त्याच फाईलमधून (GOLD: 1 kg = 100 × 10g config ओव्हरराईड).
 """
 
+import os
 import threading
 import time
 import traceback
-from datetime import time as dtime, timedelta
+from datetime import datetime as dtm, time as dtime, timedelta
 
 import cards
 import config as C
@@ -49,6 +50,8 @@ def start_engine():
         if _started:
             return
         _started = True
+    threading.Thread(target=_watchdog, daemon=True,
+                     name="watchdog").start()
     store.init_db()
     # env मध्ये टोकन दिले असेल तर seed करा
     if C.UPSTOX_ACCESS_TOKEN and not store.get_state("upstox_token"):
@@ -64,13 +67,19 @@ def _loop():
     syms = " + ".join(s["label"] for s in C.active_symbols())
     times = " | ".join(f"{s['market_open']}–{s['market_close']} ({s['short']})"
                         for s in C.active_symbols())
-    notify(f"🤖 बॉट सुरू झाला — मोड: {store.get_state('mode', 'PAPER')}\n"
-           f"सिम्बॉल्स: {syms}\n"
-           f"मोड: ORB | SL: -{C.SL_PCT:.0f}% | TP लॅडर: +{C.TP1_PCT:.0f}% / "
-           f"+{C.TARGET_PCT:.0f}% / +{C.TP3_PCT:.0f}% (भागाकार बुकिंग)\n"
-           f"बाजार वेळ: {times} IST")
+    try:
+        notify(f"🤖 बॉट सुरू झाला — मोड: {store.get_state('mode', 'PAPER')}\n"
+               f"सिम्बॉल्स: {syms}\n"
+               f"मोड: ORB | SL: -{C.SL_PCT:.0f}% | TP लॅडर: +{C.TP1_PCT:.0f}% / "
+               f"+{C.TARGET_PCT:.0f}% / +{C.TP3_PCT:.0f}% (भागाकार बुकिंग)\n"
+               f"बाजार वेळ: {times} IST")
+    except Exception:
+        pass                      # सुरुवातीचा अलर्ट नाको — इंजिन तरीच चालणे आवश्यक
     while True:
         try:
+            # हृदयस्पंदन — प्रत्येक फेरीत लिहा (watchdog + /status यांसाठी)
+            store.set_state("engine_beat",
+                            ist_now().strftime("%Y-%m-%d %H:%M:%S"))
             _tick()
         except UpstoxError as e:
             if "TOKEN_INVALID" in str(e):
@@ -82,8 +91,46 @@ def _loop():
                 notify("⚠️ API त्रुटी: " + str(e)[:200])
         except Exception as e:                      # कधीही लूप मरू नये
             store.log_event("engine err: " + repr(e) + traceback.format_exc()[:300])
-            notify("⚠️ इंजिन त्रुटी: " + repr(e)[:200])
+            try:
+                notify("⚠️ इंजिन त्रुटी: " + repr(e)[:200])
+            except Exception:
+                pass
         time.sleep(C.POLL_SEC)
+
+
+def _watchdog():
+    """पहरेदार थ्रेड: इंजिन-थ्रेड अटकला/गप्प झाला तर प्रक्रिया नव्याने सुरू करा.
+    systemd Restart=always (RestartSec=10) → ~10-15 सेकंदांत ताजा इंजिन.
+    चुकीचा शिक्का टाळण्यासाठी मुभा: सुरुवातीला 3 मिनिटे; सीमा 15 मिनिटे
+    (Upstox अर्ध-अप असताना सर्वात हळू टिक ≈ 9-10 मिनिटे)."""
+    t0 = time.monotonic()
+    while True:
+        time.sleep(60)
+        if time.monotonic() - t0 < 180:
+            continue                      # सुरुवातीची मुभा
+        try:
+            beat = store.get_state("engine_beat") or ""
+            bt = dtm.strptime(beat, "%Y-%m-%d %H:%M:%S") if beat else None
+            age = 99999.0
+            if bt:
+                now = ist_now()
+                if bt.tzinfo is None:
+                    bt = bt.replace(tzinfo=now.tzinfo)
+                age = (now - bt).total_seconds()
+        except Exception:
+            age = 99999.0
+        if age > 900:                     # 15 मिनिटांत एकही फेरी नाही → अडकला
+            try:
+                from telegram_bot import notify
+                notify("🚨 इंजिन अडकला/थांबला होता — आपोआप रीस्टार्ट होत आहे…")
+            except Exception:
+                pass
+            try:
+                store.log_event(f"🚨 watchdog: engine_beat {age:.0f}s जुना "
+                                f"— process restart")
+            except Exception:
+                pass
+            os._exit(1)                   # systemd लगेच पुन्हा सुरू करेल
 
 
 def _tick():
