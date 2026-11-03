@@ -145,12 +145,14 @@ border-bottom:1px solid rgba(148,163,184,.2);padding:0 6px}
 .dash .bcol .bv{font-family:MONOFONT;font-size:10.5px;font-weight:700}
 .dash .bcol .bar{width:26px;border-radius:6px 6px 2px 2px}
 .dash .blabels{display:flex;justify-content:space-around;padding:7px 6px 0}
-.dash .blabels span{width:64px;text-align:center;font-size:10.5px;color:#8ea0b9;font-weight:600}
+.dash .blabels span{width:64px;text-align:center;font-size:10.5px;color:#8ea0b9;font-weight:600;min-width:0}
 .dash .jr{font-family:MONOFONT;font-size:11.5px;display:flex;flex-direction:column;gap:8px}
 .dash .jr .row{display:flex;gap:10px;color:#94a3b8;line-height:1.45}
+.dash .jr .row span{min-width:0;overflow-wrap:anywhere}
 .dash .jr .tm{color:#64748b;flex:none}
 .dash .tblwrap{padding:6px 8px 4px;border-radius:16px;overflow:auto}
-.dash table.tbl{width:100%;border-collapse:collapse;font-size:12.8px;min-width:840px}
+.dash table.tbl{width:100%;border-collapse:collapse;font-size:12.8px}
+.dash table.tbl.has{min-width:840px}
 .dash .tbl th{text-align:left;font-size:10.5px;letter-spacing:1px;text-transform:uppercase;color:#64748b;
 padding:11px 13px;border-bottom:1px solid rgba(148,163,184,.16);font-weight:700}
 .dash .tbl td{padding:10px 13px;border-bottom:1px solid rgba(148,163,184,.07);color:#cbd5e1}
@@ -172,7 +174,58 @@ color:#fff!important;border:none!important;border-radius:12px!important;font-wei
 padding:10px 26px!important;box-shadow:0 10px 24px -8px rgba(99,102,241,.6)!important;transition:transform .15s!important}
 #refresh-btn button:hover,#refresh-btn:hover{transform:translateY(-2px)!important}
 @media(max-width:1100px){.dash .syms{grid-template-columns:repeat(2,1fr)}.dash .kpis{grid-template-columns:repeat(3,1fr)}}
-@media(max-width:760px){.dash .syms{grid-template-columns:1fr}.dash .kpis{grid-template-columns:repeat(2,1fr)}.dash .duo{grid-template-columns:1fr}}
+@media(max-width:760px){
+  gradio-container,.gradio-container{padding:0!important;margin:0!important;max-width:100%!important;gap:0!important}
+  .gradio-container .block,.gradio-container .form{padding:0!important;border:none!important;background:transparent!important;box-shadow:none!important}
+  .dash{padding:12px 10px 20px}
+  .dash .hero{padding:14px 14px;gap:10px;border-radius:16px}
+  .dash .hleft{gap:11px}
+  .dash .logo{width:44px;height:44px;border-radius:12px;font-size:22px}
+  .dash .htitle{font-size:18px}
+  .dash .hsub{font-size:10.8px}
+  .dash .clock{text-align:left}
+  .dash .clock .t{font-size:23px}
+  .dash .pills{margin-top:11px;gap:7px}
+  .dash .pill{font-size:11px;padding:5px 10px}
+  .dash .sec{margin:16px 0 10px;gap:9px}
+  .dash .kpis{grid-template-columns:repeat(2,1fr);gap:9px}
+  .dash .kpi{padding:12px 13px;border-radius:14px}
+  .dash .kpi .val{font-size:17.5px;margin-top:5px}
+  .dash .kpi .ic{font-size:15px;right:10px;top:11px}
+  .dash .syms{grid-template-columns:1fr;gap:10px}
+  .dash .sym{padding:13px 13px 11px;border-radius:15px}
+  .dash .sname{font-size:14.5px}
+  .dash .spnl .big{font-size:20px}
+  .dash .smeta{gap:10px;font-size:11px}
+  .dash .tlwrap{padding:13px 8px 10px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .dash .node{min-width:66px}
+  .dash .ntt{font-size:11px}
+  .dash .nll{font-size:9.5px}
+  .dash .duo{grid-template-columns:1fr;gap:10px}
+  .dash .panel{padding:13px 13px;border-radius:14px}
+  .dash .bars{height:98px}
+  .dash .bar{width:22px}
+  .dash .bcol .bv{font-size:9.5px}
+  .dash .blabels span{width:auto;flex:1 1 0;min-width:0;font-size:8.8px;letter-spacing:0}
+  .dash .tblwrap{padding:4px 5px 3px;border-radius:13px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .dash table.tbl{font-size:12px}
+  .dash table.tbl.has{min-width:700px}
+  .dash .duo>.panel{min-width:0;overflow:hidden}
+  .dash .tbl th{padding:9px 10px}
+  .dash .tbl td{padding:8px 10px}
+  .dash .empty{padding:22px 8px!important}
+  #refresh-btn{width:100%!important}
+  #refresh-btn button{width:100%!important}
+  .dash .foot{margin-top:14px}
+  .dash .fn{font-size:10.5px;width:100%;text-align:center}
+}
+@media(max-width:400px){
+  .dash .htitle{font-size:16.5px}
+  .dash .clock .t{font-size:21px}
+  .dash .kpi .val{font-size:16px}
+  .dash table.tbl.has{min-width:620px}
+  .dash .kpis{gap:8px}
+}
 """.replace("MONOFONT", _MONO)
 
 HEAD = (
@@ -347,7 +400,7 @@ def _hero(n, date):
     <div class="logo">🤖</div>
     <div>
       <div class="htitle">BankNifty + MCX AI Trading Bot</div>
-      <div class="hsub">6 दरवाजे • ORB ब्रेकआउट • TP लॅडर • डिटरमिनिस्टिक रिस्क नियम • Telegram नियंत्रण</div>
+      <div class="hsub">{len(C.SYMBOLS)} दरवाजे • ORB ब्रेकआउट • TP लॅडर • डिटरमिनिस्टिक रिस्क नियम • Telegram नियंत्रण</div>
     </div>
   </div>
   <div class="clock">
@@ -538,7 +591,8 @@ def _table(date):
                    f'<td class="m">{"₹%.2f" % t["exit"] if t["exit"] else "—"}</td>'
                    f'<td>{pnl}</td><td>{badge}{reason}</td></tr>')
     ths = "".join(f"<th>{h}</th>" for h in heads)
-    return (f'<div class="tblwrap gx"><table class="tbl"><thead><tr>{ths}</tr></thead>'
+    tcls = "tbl has" if rows else "tbl"
+    return (f'<div class="tblwrap gx"><table class="{tcls}"><thead><tr>{ths}</tr></thead>'
             f'<tbody>{"".join(trs)}</tbody></table></div>')
 
 
