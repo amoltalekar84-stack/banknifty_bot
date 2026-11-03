@@ -65,6 +65,12 @@ def init_db():
             chain BLOB);
 
         CREATE INDEX IF NOT EXISTS idx_oi_sym_date ON oi_snap(symbol, date);
+
+        CREATE TABLE IF NOT EXISTS vix_snap(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT, date TEXT, vix REAL);
+
+        CREATE INDEX IF NOT EXISTS idx_vix_date ON vix_snap(date);
         """)
         # जुन्या DB मध्ये charges column नाही → जोडा (migration)
         try:
@@ -271,3 +277,29 @@ def oi_days(sym, limit=90):
         "WHERE symbol=? AND id IN (SELECT MAX(id) FROM oi_snap "
         "WHERE symbol=o.symbol GROUP BY date) ORDER BY date DESC LIMIT ?",
         (sym, limit), fetch="all")
+
+
+# ---------------- India VIX (रेजिम-फिल्टर — स्ट्रॅटेजी अभ्यासासाठी) ----------------
+def vix_insert(date, vix):
+    """एक VIX स्नॅपशॉट जतन करा (कलेक्टर दर 5 मिनिटांनी)"""
+    from config import ist_now
+    n = ist_now()
+    return _q("INSERT INTO vix_snap(ts,date,vix) VALUES(?,?,?)",
+              (n.strftime("%Y-%m-%d %H:%M:%S"), date, vix), commit=True)
+
+
+def vix_last(date=None):
+    """शेवटचा VIX स्नॅपशॉट (date दिला तर त्या दिवसाचाच)"""
+    if date:
+        return _q("SELECT * FROM vix_snap WHERE date=? ORDER BY id DESC LIMIT 1",
+                  (date,), fetch="one")
+    return _q("SELECT * FROM vix_snap ORDER BY id DESC LIMIT 1", fetch="one")
+
+
+def vix_range(date):
+    """आजचा VIX किमान-कमाल"""
+    r = _q("SELECT MIN(vix) AS lo, MAX(vix) AS hi FROM vix_snap WHERE date=?",
+           (date,), fetch="one")
+    if r:
+        return r["lo"], r["hi"]
+    return None, None

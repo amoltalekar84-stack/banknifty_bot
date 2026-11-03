@@ -5,7 +5,8 @@ OI/ग्रीक्स कलेक्टर — "स्मार्ट-पै
   • PCR (OI-आधारित)              • CE/PE एकूण OI + आजचा बदल
   • Max Pain (सेटलमेंट व्हॅल्यू)    • CE भिंत (प्रतिकार) / PE भिंत (आधार)
   • ATM IV                       • कमी केलेली संपूर्ण चेन (zlib BLOB:
-    delta/gamma/theta/vega/IV प्रति स्ट्राइक — ATM ग्रीक्स /oi कार्डावर)
+    delta/gamma/theta/vega/IV/volume प्रति स्ट्राइक — ATM ग्रीक्स /oi कार्डावर)
+  • India VIX (रेजिम-फिल्टर) — vix_snap टेबल, दर 5 मिनिटांनी
 
 साठवण: store.oi_snap टेबल. वापर:
   • engine.start_engine() → start_collector() (स्वयंचलित thread)
@@ -25,6 +26,7 @@ from config import ist_now
 from upstox_api import get_ltp, get_option_chain
 
 INTERVAL_SEC = 300                     # 5 मिनिटे
+VIX_KEY = "NSE_INDEX|India VIX"        # रेजिम-फिल्टर — स्ट्रॅटेजी अभ्यासासाठी
 ENABLED = os.getenv("OI_COLLECT", "YES").strip().upper() != "NO"
 _chain_cache = {}                      # सिम्बॉल → अंतिम metrics (eval/स्टेटससाठी)
 _last_journal = 0.0                    # तासाला एकदाच journal सारांश
@@ -43,6 +45,12 @@ def _oi_of(node):
     oi = md.get("open_interest", node.get("open_interest"))
     pch = md.get("pchangeinopeninterest", node.get("pchangeinopeninterest"))
     return _num(oi), _num(pch)
+
+
+def _vol_of(node):
+    """call_options/put_options node → आजचा ट्रेड-व्हॉल्यूम (भिंतीची पुष्टी)"""
+    md = node.get("market_data") or {}
+    return _num(md.get("volume"))
 
 
 def _iv_of(node):
@@ -106,6 +114,7 @@ def compute_chain(chain, spot, near=None):
             g_c = c.get("option_greeks") or {}
             g_p = p.get("option_greeks") or {}
             small.append({"k": k, "ce_oi": coi, "pe_oi": poi,
+                          "ce_vol": _vol_of(c), "pe_vol": _vol_of(p),
                           "ce_iv": _iv_of(c), "pe_iv": _iv_of(p),
                           "ce_d": _num(g_c.get("delta")),
                           "pe_d": _num(g_p.get("delta")),
@@ -180,6 +189,18 @@ def collect_symbol(S, token, spot=None):
     return m, None
 
 
+def collect_vix(token):
+    """India VIX एक LTP → store.vix_snap; अयशस्वी → None (कधीच एक्सेप्शन नाही)"""
+    try:
+        v = _num(get_ltp(VIX_KEY, token))
+        if v > 0:
+            store.vix_insert(ist_now().strftime("%Y-%m-%d"), v)
+            return v
+    except Exception:
+        pass
+    return None
+
+
 def _in_market_hours(n):
     return n.weekday() < 5 and dtime(9, 15) <= n.time() <= dtime(15, 30)
 
@@ -213,12 +234,15 @@ def _loop():
             tdate = store.get_state("token_date")
             if (tok and tdate == n.strftime("%Y-%m-%d")
                     and _in_market_hours(n)):
+                vix = collect_vix(tok)        # 📈 VIX — चेनहून स्वतंत्र, निरागद
                 res = collect_all_once(tok)
                 ok = [r for r in res if r["m"]]
                 if ok and time.time() - _last_journal > 3600:
                     _last_journal = time.time()
                     s = ", ".join(f"{r['short']} PCR "
                                   f"{(r['m']['pcr'] or 0):.2f}" for r in ok)
+                    if vix:
+                        s += f" | VIX {vix:.2f}"
                     store.log_event(f"🧠 OI स्नॅपशॉट जमा होतोय ({len(ok)} "
                                     f"सिम्बॉल्स): {s}")
                 bad = [r for r in res if r["err"]]
@@ -267,3 +291,4 @@ if __name__ == "__main__":
               len(zlib.decompress(blob)) // 1024, "KB raw")
     else:
         print("compute_chain अयशस्वी — वरील keys पहा")
+    print("VIX:", collect_vix(tok))

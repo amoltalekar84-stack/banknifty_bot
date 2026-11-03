@@ -488,6 +488,8 @@ async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     atm = row["atm"]
     spot = row["spot"]
     # ATM ग्रीक्स — chain BLOB मधून; जुन्या स्नॅपशॉटमध्ये गहाळ असल्यास ओळीच नाहीत
+    vx = store.vix_last(row["date"])
+    vx_s = f"{vx['vix']:.2f}" if vx and vx["vix"] else "—"
     atm_s = f"{atm:,.0f}" if atm else "—"
     g = oicollect.atm_greeks(row["chain"], atm)
     greeks_lines = []
@@ -512,6 +514,7 @@ async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🧱 CE भिंत (प्रतिकार): {_f(row['ce_wall'])}",
         f"🧱 PE भिंत (आधार): {_f(row['pe_wall'])}",
         f"ATM IV: {(str(row['atm_iv']) + '%' if row['atm_iv'] else '—')}",
+        f"India VIX: {vx_s}",
         *greeks_lines,
         f"आजचे स्नॅपशॉट्स: {store.oi_count(sym, row['date'])}",
         "",
