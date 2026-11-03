@@ -40,11 +40,16 @@ def _num(x, d=0.0):
 
 
 def _oi_of(node):
-    """call_options/put_options node → (open_interest, pchange%)"""
+    """node → (oi, prev_oi, pchange%).
+    नवीन Upstox योजना: market_data.oi / prev_oi; जुनी: open_interest /
+    pchangeinopeninterest — दोन्ही हाताळल्या."""
     md = node.get("market_data") or {}
-    oi = md.get("open_interest", node.get("open_interest"))
+    oi = md.get("oi", md.get("open_interest", node.get("open_interest")))
+    prev = md.get("prev_oi")
     pch = md.get("pchangeinopeninterest", node.get("pchangeinopeninterest"))
-    return _num(oi), _num(pch)
+    if prev is None:
+        prev = (oi / (1.0 + _num(pch) / 100.0)) if (oi and pch) else oi
+    return _num(oi), _num(prev), _num(pch)
 
 
 def _vol_of(node):
@@ -86,10 +91,11 @@ def compute_chain(chain, spot, near=None):
     try:
         if not chain:
             return None
-        exps = sorted({r.get("expiry_date") for r in chain
-                       if r.get("expiry_date")})
+        exps = sorted({(r.get("expiry_date") or r.get("expiry")) for r in chain
+                       if (r.get("expiry_date") or r.get("expiry"))})
         near = near or (exps[0] if exps else None)
-        rows = ([r for r in chain if r.get("expiry_date") == near]
+        rows = ([r for r in chain
+                 if (r.get("expiry_date") or r.get("expiry")) == near]
                 if near else list(chain))
         if not rows:
             return None
@@ -103,13 +109,12 @@ def compute_chain(chain, spot, near=None):
                 continue
             c = r.get("call_options") or {}
             p = r.get("put_options") or {}
-            coi, cp = _oi_of(c)
-            poi, pp = _oi_of(p)
+            coi, cprev, cp = _oi_of(c)
+            poi, pprev, pp = _oi_of(p)
             ce_oi += coi
             pe_oi += poi
-            # %-बदल → अंदाजे absolute बदल (oi_prev = oi/(1+pct/100))
-            ce_chg += coi - (coi / (1.0 + cp / 100.0) if cp > -99.0 else coi)
-            pe_chg += poi - (poi / (1.0 + pp / 100.0) if pp > -99.0 else poi)
+            ce_chg += coi - cprev                 # खरा absolute बदल
+            pe_chg += poi - pprev
             strikes.append({"k": k, "ce_oi": coi, "pe_oi": poi})
             g_c = c.get("option_greeks") or {}
             g_p = p.get("option_greeks") or {}
@@ -247,8 +252,11 @@ def _loop():
                                     f"सिम्बॉल्स): {s}")
                 bad = [r for r in res if r["err"]]
                 if bad and not ok:
-                    store.log_event("oi: " + "; ".join(
-                        f"{r['short']}→{r['err']}" for r in bad)[:200])
+                    msg = "oi: " + "; ".join(
+                        f"{r['short']}→{r['err']}" for r in bad)[:200]
+                    if vix:
+                        msg += f" | VIX {vix:.2f} तरी जमा ✓"
+                    store.log_event(msg)
         except Exception as e:
             try:
                 store.log_event("oi err: " + repr(e)

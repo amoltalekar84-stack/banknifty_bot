@@ -7,6 +7,7 @@ import time
 import urllib.parse
 
 import requests
+from config import ist_now
 
 BASE = "https://api.upstox.com/v2"
 BASE_V3 = "https://api.upstox.com/v3"
@@ -38,7 +39,15 @@ def _get(path_or_url, token, params=None, retries=2):
             raise
         except Exception as e:
             if attempt == retries:
-                raise UpstoxError(f"GET fail: {e}") from e
+                body = ""
+                resp = getattr(e, "response", None)
+                if resp is not None:
+                    try:
+                        body = (resp.text or "")[:180]
+                    except Exception:
+                        body = ""
+                raise UpstoxError(f"GET fail: {e}"
+                                  + (f" | body: {body}" if body else "")) from e
             time.sleep(1.0)
     raise UpstoxError("GET fail: retries exhausted")
 
@@ -152,10 +161,38 @@ def get_hist_candles_v3(token, instrument_key, unit, interval, from_date, to_dat
     return []
 
 
+_expiry_cache = {}            # index_key → (आजची तारीख, expiry) — दिवसात एकदाच resolve
+
+
+def get_near_expiry(token, index_key):
+    """option/contract (expiry ऐच्छिक) → आजपासून जवळची expiry (YYYY-MM-DD)"""
+    today = ist_now().strftime("%Y-%m-%d")
+    j = _get("/option/contract", token, params={"instrument_key": index_key})
+    exps = sorted({r.get("expiry") for r in (j.get("data") or [])
+                   if r.get("expiry")})
+    future = [e for e in exps if e >= today]
+    return future[0] if future else (exps[-1] if exps else None)
+
+
 def get_option_chain(token, index_key):
-    """BANKNIFTY चा संपूर्ण ऑप्शन चेन"""
-    j = _get("/option/chain", token, params={"instrument_key": index_key})
-    return j.get("data", []) or []
+    """ऑप्शन चेन. ⚠️ Upstox नवीन नियम: expiry_date आता आवश्यक
+    (नसेल तर 400 Bad Request!). → दिवसात एकदा option/contract मधून
+    जवळची expiry resolve करून cache; रिकामी चेन आली तर cache तोडून
+    पुढच्या वेळी पुन्हा resolve."""
+    today = ist_now().strftime("%Y-%m-%d")
+    c = _expiry_cache.get(index_key)
+    if not c or c[0] != today:
+        exp = get_near_expiry(token, index_key)
+        if not exp:
+            raise UpstoxError(f"near-expiry सापडली नाही ({index_key})")
+        _expiry_cache[index_key] = (today, exp)
+        c = _expiry_cache[index_key]
+    j = _get("/option/chain", token, params={"instrument_key": index_key,
+                                             "expiry_date": c[1]})
+    rows = j.get("data", []) or []
+    if not rows:
+        _expiry_cache.pop(index_key, None)
+    return rows
 
 
 # ------------------------------------------------------------------

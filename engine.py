@@ -328,11 +328,14 @@ def _pick_option(S, token, spot, side):
     chain = get_option_chain(token, S["index_key"])
     if not chain:
         return None
-    expiries = sorted({r.get("expiry_date") for r in chain if r.get("expiry_date")})
+    expiries = sorted({(r.get("expiry_date") or r.get("expiry"))
+                       for r in chain
+                       if (r.get("expiry_date") or r.get("expiry"))})
     if not expiries:
         return None
     near = expiries[0]                      # सर्वात जवळची एक्सपायरी
-    rows = sorted([r for r in chain if r.get("expiry_date") == near],
+    rows = sorted([r for r in chain
+                   if (r.get("expiry_date") or r.get("expiry")) == near],
                   key=lambda r: abs(float(r.get("strike_price") or 0) - spot))
     for row in rows[:4]:
         node = row.get("call_options") if side == "CE" else row.get("put_options")
