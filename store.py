@@ -55,6 +55,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS events(
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             ts REAL, msg TEXT);
+
+        CREATE TABLE IF NOT EXISTS oi_snap(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ts TEXT, date TEXT, symbol TEXT,
+            spot REAL, atm REAL, pcr REAL,
+            ce_oi REAL, pe_oi REAL, ce_chg REAL, pe_chg REAL,
+            max_pain REAL, atm_iv REAL, ce_wall REAL, pe_wall REAL,
+            chain BLOB);
+
+        CREATE INDEX IF NOT EXISTS idx_oi_sym_date ON oi_snap(symbol, date);
         """)
         # जुन्या DB मध्ये charges column नाही → जोडा (migration)
         try:
@@ -214,3 +224,50 @@ def total_charges():
     row = _q("SELECT COALESCE(SUM(charges),0) AS s FROM trades WHERE status='CLOSED'",
              fetch="one")
     return round(row["s"], 2) if row else 0.0
+
+
+# ---------------- OI स्नॅपशॉट्स (PCR / Max Pain / ग्रीक्स) ----------------
+def oi_insert(sym, date, m, chain_blob=None):
+    """एक OI स्नॅपशॉट जतन करा (m = oicollect.compute_chain चा dict)"""
+    return _q(
+        "INSERT INTO oi_snap(ts,date,symbol,spot,atm,pcr,ce_oi,pe_oi,"
+        "ce_chg,pe_chg,max_pain,atm_iv,ce_wall,pe_wall,chain) "
+        "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (m.get("ts"), date, sym, m.get("spot"), m.get("atm"), m.get("pcr"),
+         m.get("ce_oi"), m.get("pe_oi"), m.get("ce_chg"), m.get("pe_chg"),
+         m.get("max_pain"), m.get("atm_iv"), m.get("ce_wall"),
+         m.get("pe_wall"), chain_blob), commit=True)
+
+
+def oi_last(sym, date=None):
+    """शेवटचा स्नॅपशॉट (date दिला तर त्या दिवसाचाच)"""
+    if date:
+        return _q("SELECT * FROM oi_snap WHERE symbol=? AND date=? "
+                  "ORDER BY id DESC LIMIT 1", (sym, date), fetch="one")
+    return _q("SELECT * FROM oi_snap WHERE symbol=? ORDER BY id DESC LIMIT 1",
+              (sym,), fetch="one")
+
+
+def oi_count(sym, date):
+    r = _q("SELECT COUNT(*) AS c FROM oi_snap WHERE symbol=? AND date=?",
+           (sym, date), fetch="one")
+    return int(r["c"] or 0) if r else 0
+
+
+def oi_pcr_range(sym, date):
+    """आजची PCR किमान-कमाल रेंज"""
+    r = _q("SELECT MIN(pcr) AS lo, MAX(pcr) AS hi FROM oi_snap "
+           "WHERE symbol=? AND date=?", (sym, date), fetch="one")
+    if r:
+        return r["lo"], r["hi"]
+    return None, None
+
+
+def oi_days(sym, limit=90):
+    """मागच्या दिवसांचे दिवस-समारोप (प्रति दिवस शेवटचा स्नॅपशॉट) — स्ट्रॅटेजी-अभ्यासासाठी"""
+    return _q(
+        "SELECT date, spot, atm, pcr, ce_oi, pe_oi, ce_chg, pe_chg, "
+        "max_pain, atm_iv, ce_wall, pe_wall FROM oi_snap o "
+        "WHERE symbol=? AND id IN (SELECT MAX(id) FROM oi_snap "
+        "WHERE symbol=o.symbol GROUP BY date) ORDER BY date DESC LIMIT ?",
+        (sym, limit), fetch="all")

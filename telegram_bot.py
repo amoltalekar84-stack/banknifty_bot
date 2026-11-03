@@ -43,6 +43,7 @@ HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKN
 /positions — उघड्या पोझिशन्स (सर्व सिम्बॉल्स)
 /trades — आजचे सर्व ट्रेड्स
 /eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
+/oi [सिम्बॉल] — OI विश्लेषण: PCR, Max Pain, भिंती, IV 🧠 (बाजार वेळेत आपोआप जमा)
 /pause — नवीन ट्रेड थांबवा (सर्व 9 सिम्बॉल्स)
 /resume — पुन्हा सुरू
 /kill — 🚨 इमर्जन्सी: सगळं बंद + पोझिशन बंद
@@ -449,6 +450,61 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{leg_txt}{ltp_txt}")
 
 
+async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/oi [सिम्बॉल] — शेवटचा OI स्नॅपशॉट: PCR, Max Pain, भिंती, IV"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    arg = (ctx.args[0].upper() if getattr(ctx, "args", None) and ctx.args
+           else "BANKNIFTY")
+    keymap = {"BANKNIFTY": "BANKNIFTY", "BN": "BANKNIFTY",
+              "NIFTY": "NIFTY", "NIFTY50": "NIFTY",
+              "SENSEX": "SENSEX", "FINNIFTY": "FINNIFTY", "FIN": "FINNIFTY"}
+    sym = keymap.get(arg)
+    if not sym:
+        await update.effective_message.reply_text(
+            "वापर: /oi [BANKNIFTY | NIFTY | SENSEX | FINNIFTY]")
+        return
+    row = store.oi_last(sym)
+    if not row:
+        await update.effective_message.reply_text(
+            f"अजून OI डेटा नाही ({sym}).\n"
+            "बाजार वेळेत (09:15–15:30) दर 5 मिनिटांनी आपोआप जमा होतो — "
+            "नंतर पुन्हा प्रयत्न करा.")
+        return
+    pcr = row["pcr"]
+    lo, hi = store.oi_pcr_range(sym, row["date"])
+    try:
+        bias = ("🟢 बुलिश बायस (PE लिहिणारे जास्त)" if pcr and pcr >= 1.2 else
+                "🔴 बेअरिश बायस (CE लिहिणारे जास्त)" if pcr and pcr <= 0.8 else
+                "😐 तटस्थ/मिश्र")
+    except Exception:
+        bias = "—"
+    def _f(v, pat="{:,.0f}", dash="—"):
+        return pat.format(v) if v not in (None, "", 0) else dash
+    mp = row["max_pain"]
+    atm = row["atm"]
+    spot = row["spot"]
+    # साध्या ओळी बांधून पाठवा (टर्नरी-स्ट्रिंग गुंता टाळा):
+    lines = [
+        f"🧠 OI विश्लेषण — {sym}  ({(row['ts'] or '')[11:16]})",
+        f"स्पॉट: {_f(spot, '{:,.1f}')} | ATM: {_f(atm)}",
+        f"PCR (OI): {(f'{pcr:.2f}' if pcr else '—')} — {bias}",
+        f"आजची PCR रेंज: {(f'{lo:.2f}–{hi:.2f}' if (lo and hi) else '—')}",
+        f"CE OI: {_f(row['ce_oi'])} | बदल: {(row['ce_chg'] or 0):+,.0f}",
+        f"PE OI: {_f(row['pe_oi'])} | बदल: {(row['pe_chg'] or 0):+,.0f}",
+        f"Max Pain: {_f(mp)}",
+        f"🧱 CE भिंत (प्रतिकार): {_f(row['ce_wall'])}",
+        f"🧱 PE भिंत (आधार): {_f(row['pe_wall'])}",
+        f"ATM IV: {(str(row['atm_iv']) + '%' if row['atm_iv'] else '—')}",
+        f"आजचे स्नॅपशॉट्स: {store.oi_count(sym, row['date'])}",
+        "",
+        "ℹ️ संदर्भासाठीच — फक्त OI पाहून ट्रेड नको; बॉट ORB सिग्नलवरच एंट्री घेतो.",
+    ]
+    await update.effective_message.reply_text("\n".join(lines))
+
+
 async def cmd_trades(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     e = _guard(update.effective_chat.id)
     if e:
@@ -713,6 +769,7 @@ async def _serve():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("dashkey", cmd_dashkey))
     app.add_handler(CommandHandler("positions", cmd_positions))
+    app.add_handler(CommandHandler("oi", cmd_oi))
     app.add_handler(CommandHandler("trades", cmd_trades))
     app.add_handler(CommandHandler("eod", cmd_eod))
     app.add_handler(CommandHandler("pause", cmd_pause))

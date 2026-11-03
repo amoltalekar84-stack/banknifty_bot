@@ -52,6 +52,11 @@ def start_engine():
         _started = True
     threading.Thread(target=_watchdog, daemon=True,
                      name="watchdog").start()
+    try:
+        import oicollect
+        oicollect.start_collector()          # 🧠 OI/ग्रीक्स स्नॅपशॉट्स (5 मिनिटे)
+    except Exception as _e:
+        print("OI कलेक्टर सुरू होऊ शकला नाही:", repr(_e))
     store.init_db()
     # env मध्ये टोकन दिले असेल तर seed करा
     if C.UPSTOX_ACCESS_TOKEN and not store.get_state("upstox_token"):
