@@ -111,10 +111,36 @@ def get_ltp(key, token):
 
 
 def get_today_candles(token, instrument_key, date_str):
-    """आजचे 1-मिनिट कॅन्डल (ORB साठी)"""
+    """आजचे 1-मिनिट कॅन्डल (ORB साठी).
+    तिहेरी मार्ग: (१) V2 intraday — आजचा डेटा देणारा एकमेव एंडपॉइंट
+    (dated एंडपॉइंट आजचा दिवस कधीच देत नाही — 2026-11-03 जर्नल-पुरावा:
+    9/9 सिम्बॉल्स 0 कॅन्डल, बाजारबंदीतही 0); (२) V3 minutes/1;
+    (३) V2 dated — जुना अंतिम fallback."""
     key_enc = urllib.parse.quote(instrument_key, safe="")
+    try:                       # १) V2 intraday — आजचे कॅन्डल
+        j = _get(f"{BASE}/historical-candle/intraday/{key_enc}/1minute", token)
+        candles = ((j.get("data") or {}).get("candles")) or []
+        if candles:
+            return sorted(candles, key=lambda c: c[0])
+    except Exception:
+        pass
+    try:                       # २) V3 minutes/1
+        j = _get(f"{BASE_V3}/historical-candle/{key_enc}/minutes/1/"
+                 f"{date_str}/{date_str}", token)
+        d = j.get("data") or {}
+        candles = []
+        if isinstance(d, dict):
+            candles = d.get("candles") or []
+            if not candles:
+                inner = d.get("data") or {}
+                if isinstance(inner, dict):
+                    candles = inner.get("candles") or []
+        if candles:
+            return sorted(candles, key=lambda c: c[0])
+    except Exception:
+        pass
     url = f"{BASE}/historical-candle/{key_enc}/1minute/{date_str}/{date_str}"
-    j = _get(url, token)
+    j = _get(url, token)       # ३) V2 dated — जुना मार्ग
     candles = ((j.get("data") or {}).get("candles")) or []
     return sorted(candles, key=lambda c: c[0])
 

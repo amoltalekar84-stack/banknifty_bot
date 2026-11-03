@@ -254,8 +254,8 @@ def _maybe_enter(S, date, token, now):
             store.set_state(notekey, "1")
             store.log_event(f"{S['label']}: कॅन्डल डेटा मिळत नाही "
                             f"({len(cs)}/{S['min_candles']}) — आज वगळला")
-            notify(f"ℹ️ {S['label']}: कॅन्डल डेटा मिळत नाही — "
-                   "आज बाजार सुट्टी असावी. बॉट पहरा देत राहील.")
+            notify(f"ℹ️ {S['label']}: कॅन्डल डेटा मिळत नाही "
+                   "— API-मार्ग तपासा (candlecheck.py). बॉट पहरा देत राहील.")
         return
 
     spot = get_ltp(dkey, token)
