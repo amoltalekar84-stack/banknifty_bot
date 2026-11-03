@@ -14,6 +14,7 @@ from datetime import datetime as dtm, time as dtime
 
 import config as C
 import dash
+import oicollect
 import paper
 import store
 from config import ist_now
@@ -43,7 +44,7 @@ HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKN
 /positions — उघड्या पोझिशन्स (सर्व सिम्बॉल्स)
 /trades — आजचे सर्व ट्रेड्स
 /eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
-/oi [सिम्बॉल] — OI विश्लेषण: PCR, Max Pain, भिंती, IV 🧠 (बाजार वेळेत आपोआप जमा)
+/oi [सिम्बॉल] — OI विश्लेषण: PCR, Max Pain, भिंती, IV, ग्रीक्स 🧠 (बाजार वेळेत आपोआप जमा)
 /pause — नवीन ट्रेड थांबवा (सर्व 9 सिम्बॉल्स)
 /resume — पुन्हा सुरू
 /kill — 🚨 इमर्जन्सी: सगळं बंद + पोझिशन बंद
@@ -451,7 +452,7 @@ async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/oi [सिम्बॉल] — शेवटचा OI स्नॅपशॉट: PCR, Max Pain, भिंती, IV"""
+    """/oi [सिम्बॉल] — शेवटचा OI स्नॅपशॉट: PCR, Max Pain, भिंती, IV, ATM ग्रीक्स"""
     e = _guard(update.effective_chat.id)
     if e:
         await update.effective_message.reply_text(e)
@@ -486,6 +487,19 @@ async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     mp = row["max_pain"]
     atm = row["atm"]
     spot = row["spot"]
+    # ATM ग्रीक्स — chain BLOB मधून; जुन्या स्नॅपशॉटमध्ये गहाळ असल्यास ओळीच नाहीत
+    atm_s = f"{atm:,.0f}" if atm else "—"
+    g = oicollect.atm_greeks(row["chain"], atm)
+    greeks_lines = []
+    if g and (g.get("ce_d") or g.get("pe_d") or g.get("ce_t")
+              or g.get("pe_t") or g.get("ce_g") or g.get("pe_g")):
+        greeks_lines = [
+            f"ATM ग्रीक्स ({atm_s}):",
+            f"  CE  Δ {_f(g.get('ce_d'), '{:+.2f}')} · Γ {_f(g.get('ce_g'), '{:.4f}')} · "
+            f"Θ {_f(g.get('ce_t'), '{:+.1f}')} · V {_f(g.get('ce_v'), '{:+.1f}')}",
+            f"  PE  Δ {_f(g.get('pe_d'), '{:+.2f}')} · Γ {_f(g.get('pe_g'), '{:.4f}')} · "
+            f"Θ {_f(g.get('pe_t'), '{:+.1f}')} · V {_f(g.get('pe_v'), '{:+.1f}')}",
+        ]
     # साध्या ओळी बांधून पाठवा (टर्नरी-स्ट्रिंग गुंता टाळा):
     lines = [
         f"🧠 OI विश्लेषण — {sym}  ({(row['ts'] or '')[11:16]})",
@@ -498,6 +512,7 @@ async def cmd_oi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🧱 CE भिंत (प्रतिकार): {_f(row['ce_wall'])}",
         f"🧱 PE भिंत (आधार): {_f(row['pe_wall'])}",
         f"ATM IV: {(str(row['atm_iv']) + '%' if row['atm_iv'] else '—')}",
+        *greeks_lines,
         f"आजचे स्नॅपशॉट्स: {store.oi_count(sym, row['date'])}",
         "",
         "ℹ️ संदर्भासाठीच — फक्त OI पाहून ट्रेड नको; बॉट ORB सिग्नलवरच एंट्री घेतो.",

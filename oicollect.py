@@ -4,7 +4,8 @@ OI/ग्रीक्स कलेक्टर — "स्मार्ट-पै
 बाजार वेळेत दर 5 मिनिटांनी प्रत्येक इंडेक्सची ऑप्शन चेन आणून साठवतो:
   • PCR (OI-आधारित)              • CE/PE एकूण OI + आजचा बदल
   • Max Pain (सेटलमेंट व्हॅल्यू)    • CE भिंत (प्रतिकार) / PE भिंत (आधार)
-  • ATM IV                       • कमी केलेली संपूर्ण चेन (zlib BLOB)
+  • ATM IV                       • कमी केलेली संपूर्ण चेन (zlib BLOB:
+    delta/gamma/theta/vega/IV प्रति स्ट्राइक — ATM ग्रीक्स /oi कार्डावर)
 
 साठवण: store.oi_snap टेबल. वापर:
   • engine.start_engine() → start_collector() (स्वयंचलित thread)
@@ -108,6 +109,8 @@ def compute_chain(chain, spot, near=None):
                           "ce_iv": _iv_of(c), "pe_iv": _iv_of(p),
                           "ce_d": _num(g_c.get("delta")),
                           "pe_d": _num(g_p.get("delta")),
+                          "ce_g": _num(g_c.get("gamma")),
+                          "pe_g": _num(g_p.get("gamma")),
                           "ce_t": _num(g_c.get("theta")),
                           "pe_t": _num(g_p.get("theta")),
                           "ce_v": _num(g_c.get("vega")),
@@ -135,6 +138,19 @@ def compute_chain(chain, spot, near=None):
             "ce_wall": ce_wall, "pe_wall": pe_wall,
             "chain_blob": zlib.compress(json.dumps(small).encode()),
         }
+    except Exception:
+        return None
+
+
+def atm_greeks(blob, atm):
+    """chain BLOB → ATM स्ट्राइकचा ग्रीक्स-ओळ (dict) — नाहीतर None.
+    जुने स्नॅपशॉट (gamma नसलेले) सुद्धा चालतील — गहाळ की = None."""
+    try:
+        rows = json.loads(zlib.decompress(blob))
+        if not rows:
+            return None
+        atm = _num(atm)
+        return min(rows, key=lambda r: abs(_num(r.get("k")) - atm))
     except Exception:
         return None
 
