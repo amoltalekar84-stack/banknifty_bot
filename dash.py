@@ -28,6 +28,9 @@ def _hhmm(s):
 # सिम्बॉल रंग/चिन्ह
 SYM_STYLE = {
     "BANKNIFTY": {"c": "#818cf8", "icon": "🏦"},
+    "NIFTY":     {"c": "#60a5fa", "icon": "🎯"},
+    "SENSEX":    {"c": "#f472b6", "icon": "🗼"},
+    "FINNIFTY":  {"c": "#a78bfa", "icon": "💳"},
     "COPPER":    {"c": "#fb923c", "icon": "⚡"},
     "GOLD":      {"c": "#fbbf24", "icon": "🪙"},
     "SILVER":    {"c": "#cbd5e1", "icon": "🥈"},

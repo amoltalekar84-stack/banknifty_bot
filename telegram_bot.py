@@ -31,23 +31,27 @@ def _t(s):
     h, m = s.split(":")
     return dtime(int(h), int(m))
 
-HELP = """🤖 BankNifty + Copper AI बॉट — कमांड्स:
+HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKNIFTY+NIFTY+SENSEX+FINNIFTY+COPPER+GOLD+SILVER+CRUDE+NATGAS)
 
+कमांड्स:
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
 /token — आजची लॉग-इन लिंक मागा (रोज सकाळी पहिले पाऊल)
 /code <कोड> — लिंक उघडून लॉग-इन केल्यावर URL मधला लहान code → बॉट स्वतः टोकन बनवतो ⭐ (रोज फक्त हे पुरेसे!) 🔒 आपोआप पुसला जातो
 /settoken <टोकन> — लांब eyJ… access token असेल तरच थेट (बॅकअप — /code ची जागा घेतो, दोन्हीची गरज नाही) 🔒 आपोआप पुसला जातो
-/status — सध्याची स्थिती (दोन्ही सिम्बॉल्स)
+/status — सध्याची स्थिती (सर्व 9 सिम्बॉल्स)
 /dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
-/positions — उघड्या पोझिशन्स (BANKNIFTY + COPPER)
+/positions — उघड्या पोझिशन्स (सर्व सिम्बॉल्स)
 /trades — आजचे सर्व ट्रेड्स
 /eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
-/pause — नवीन ट्रेड थांबवा (दोन्ही)
+/pause — नवीन ट्रेड थांबवा (सर्व 9 सिम्बॉल्स)
 /resume — पुन्हा सुरू
 /kill — 🚨 इमर्जन्सी: सगळं बंद + पोझिशन बंद
 /mode paper — कागदी मोड (डीफॉल्ट)
 /mode live — प्रत्यक्ष पैशांचा मोड (कुलूपबंद)
 /setcapital 50000 — BANKNIFTY भांडवल बदला
+/setcapitalnifty 50000 — NIFTY 50 भांडवल बदला
+/setcapitalsensex 50000 — SENSEX भांडवल बदला
+/setcapitalfn 50000 — FINNIFTY भांडवल बदला
 /setcapitalcu 200000 — COPPER भांडवल बदला
 /setcapitalgold 800000 — GOLD भांडवल बदला
 /setcapitalsilver 500000 — SILVER भांडवल बदला
@@ -718,7 +722,9 @@ async def _serve():
     app.add_handler(CommandHandler("setcapital", cmd_setcapital))
     app.add_handler(CommandHandler("setcapitalcu", cmd_setcapitalcu))
     for _S in C.SYMBOLS:
-        if _S["mcx"] and _S["key"] != "COPPER":
+        if _S["key"] not in ("BANKNIFTY", "COPPER"):
+            # /setcapitalnifty /setcapitalsensex /setcapitalfn /
+            # /setcapitalgold /setcapitalsilver /setcapitalcrude /setcapitalng
             app.add_handler(CommandHandler(
                 "setcapital" + _S["short"].lower(), _mk_cap_cmd(_S)))
     app.add_handler(CommandHandler("backtest", cmd_backtest))

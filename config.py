@@ -199,6 +199,7 @@ BANKNIFTY = {
     "label": "BANKNIFTY",
     "short": "BN",
     "seg": "NSE",
+    "index_key": INDEX_KEY,
     "lot": LOT_SIZE,
     "capital": CAPITAL,
     "capital_state": "capital_BANKNIFTY",
@@ -216,12 +217,68 @@ BANKNIFTY = {
     "summary_at": "15:20",
 }
 
+# ----------------------------------------------------------------
+# 7.7 NIFTY 50 / SENSEX / FINNIFTY — बॉट आता All Rounder (एकूण 9 सिम्बॉल्स)
+#     • BANKNIFTY प्रमाणेच वेळा/नियम: ORB 09:15–09:30, एंट्री 09:30–12:00,
+#       SL −20%, TP लॅडर 1/3+1/3+1/3, breakeven लॉक, 15:05 स्क्वेअर-ऑफ.
+#     • लॉट (Upstox instruments, नोव्हेंबर 2026): NIFTY 65 | SENSEX 20 |
+#       FINNIFTY 60 — सर्व 3 भागांत विभागण्यायोग्य/समर्थित.
+#     • प्रत्येकाला स्वतंत्र paper भांडवल ₹50,000 + दैनिक तोटा मर्यादा ₹2,500.
+#     • SENSEX = BSE (BSE_INDEX|SENSEX); ऑप्शन चेन त्याच API ने.
+# ----------------------------------------------------------------
+
+def _index_symbol(key, label, short, seg, index_key, lot,
+                  capital, max_daily_loss, summary_at):
+    return {
+        "key": key, "label": label, "short": short, "seg": seg,
+        "index_key": index_key,
+        "lot": lot,
+        "capital": capital, "capital_state": "capital_" + key,
+        "max_trades": MAX_TRADES_PER_DAY, "max_daily_loss": max_daily_loss,
+        "orb_start": ORB_START, "orb_end": ORB_END,
+        "entry_start": ENTRY_START, "entry_end": ENTRY_END,
+        "square_off": SQUARE_OFF,
+        "square_off_label": "वेळ एग्झिट (15:05)",
+        "market_open": MARKET_OPEN, "market_close": MARKET_CLOSE,
+        "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT,
+        "tp3_pct": TP3_PCT,
+        "ladder": True,           # TP लॅडर — thirds() शिल्लक स्वयंहाताळते
+        "mcx": False,
+        "min_candles": 16,
+        "summary_at": summary_at,
+    }
+
+NIFTY = _index_symbol(
+    "NIFTY", "NIFTY 50", "NIFTY", "NSE", "NSE_INDEX|Nifty 50",
+    lot=_i("NIFTY_LOT", 65),
+    capital=_f("NIFTY_CAPITAL", 50000.0),
+    max_daily_loss=_f("NIFTY_MAX_DAILY_LOSS", 2500.0),
+    summary_at="15:22")
+
+SENSEX = _index_symbol(
+    "SENSEX", "SENSEX (BSE)", "SENSEX", "BSE", "BSE_INDEX|SENSEX",
+    lot=_i("SENSEX_LOT", 20),
+    capital=_f("SENSEX_CAPITAL", 50000.0),
+    max_daily_loss=_f("SENSEX_MAX_DAILY_LOSS", 2500.0),
+    summary_at="15:24")
+
+FINNIFTY = _index_symbol(
+    "FINNIFTY", "FINNIFTY", "FN", "NSE", "NSE_INDEX|Nifty Fin Service",
+    lot=_i("FINNIFTY_LOT", 60),
+    capital=_f("FINNIFTY_CAPITAL", 50000.0),
+    max_daily_loss=_f("FINNIFTY_MAX_DAILY_LOSS", 2500.0),
+    summary_at="15:26")
+
 # इंजिन या क्रमाने प्रत्येक सिम्बॉल चालवते
-SYMBOLS = [BANKNIFTY, COPPER, GOLD, SILVER, CRUDE, NATGAS]
+SYMBOLS = [BANKNIFTY, NIFTY, SENSEX, FINNIFTY,
+           COPPER, GOLD, SILVER, CRUDE, NATGAS]
 
 # प्रत्येक सिम्बॉल स्वतंत्र बंद करता येतो (env मध्ये ENABLE_<SYMBOL>=NO)
 _ENABLERS = {
     "BANKNIFTY": True,
+    "NIFTY": os.getenv("ENABLE_NIFTY", "YES").strip().upper() != "NO",
+    "SENSEX": os.getenv("ENABLE_SENSEX", "YES").strip().upper() != "NO",
+    "FINNIFTY": os.getenv("ENABLE_FINNIFTY", "YES").strip().upper() != "NO",
     "COPPER": os.getenv("ENABLE_COPPER", "YES").strip().upper() != "NO",
     "GOLD": os.getenv("ENABLE_GOLD", "YES").strip().upper() != "NO",
     "SILVER": os.getenv("ENABLE_SILVER", "YES").strip().upper() != "NO",

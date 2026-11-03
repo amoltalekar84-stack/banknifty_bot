@@ -202,9 +202,9 @@ def _tick_symbol(S, token, now):
 # एंट्री
 # ------------------------------------------------------------------
 def _data_key(S, now):
-    """सिम्बॉलचा डेटा-स्रोत: BN = इंडेक्स; MCX = नवीनतम main-series फ्यूचर्स."""
+    """सिम्बॉलचा डेटा-स्रोत: BN/NIFTY/SENSEX/FINNIFTY = निर्देशांक; MCX = फ्यूचर्स."""
     if not S["mcx"]:
-        return C.INDEX_KEY, None
+        return S.get("index_key") or C.INDEX_KEY, None
     snap = instruments.mcx_snapshot(S["commodity"],
                                     ts_pattern=S.get("ts_pattern"))
     if not snap:
@@ -286,7 +286,7 @@ def _maybe_enter(S, date, token, now):
         if S["mcx"]:
             opt = _pick_option_file(S, snap, token, spot, sig["side"])
         else:
-            opt = _pick_option(token, spot, sig["side"])
+            opt = _pick_option(S, token, spot, sig["side"])
     except Exception as e:
         notify(f"⚠️ {S['label']} ऑप्शन निवड अयशस्वी: " + str(e)[:200])
         return
@@ -317,10 +317,10 @@ def _maybe_enter(S, date, token, now):
     notify(card, html=True)
 
 
-def _pick_option(token, spot, side):
-    """BANKNIFTY: ATM (सर्वात जवळचा स्ट्राइक) ऑप्शन निवडा; महाग पडल्यास शेजारचा बघा"""
-    S = C.BANKNIFTY
-    chain = get_option_chain(token, C.INDEX_KEY)
+def _pick_option(S, token, spot, side):
+    """NSE/BSE इंडेक्स: ATM (सर्वात जवळचा स्ट्राइक) ऑप्शन निवडा;
+    महाग पडल्यास शेजारचा बघा. S = सिम्बॉल config (आपला index_key + lot + भांडवल)"""
+    chain = get_option_chain(token, S["index_key"])
     if not chain:
         return None
     expiries = sorted({r.get("expiry_date") for r in chain if r.get("expiry_date")})

@@ -163,9 +163,10 @@ def eval_payload(date=None, k: str = ""):
     except Exception:
         data["flags"]["engine_beat"] = None
         data["flags"]["engine_alive"] = False
-    # सर्व MCX सिम्बॉल्सचे स्वतंत्र ब्लॉक: copper / gold / silver / crude / natgas
+    # इतर सर्व सिम्बॉल्सचे स्वतंत्र ब्लॉक: nifty / sensex / finnifty /
+    # copper / gold / silver / crude / natgas (BANKNIFTY = वरचा जुना भाग)
     for s in C.SYMBOLS:
-        if s["mcx"]:
+        if s["key"] != "BANKNIFTY":
             data[s["key"].lower()] = _sym_payload(s, date)
     # बॉट जर्नल — शेवटचे इव्हेंट (EOD रिपोर्ट/पडताळणीसाठी)
     try:
