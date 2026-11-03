@@ -270,6 +270,15 @@ def _loop():
 # स्वतंत्र पडताळणी: ./venv/bin/python oicollect.py  → स्कीमा + नमुना आकडे
 # ------------------------------------------------------------------
 if __name__ == "__main__":
+    # systemd सेवा DATA_DIR=<repo>/data घेऊन चालते (deploy.sh);
+    # बेअर probe ने तीच DB बघावी — नाहीतर /tmp/bnb_data (रिकामी) बघून
+    # सेवेकडे टोकन असतानाही चुकीचे "टोकन नाही" दिसते.
+    if not os.getenv("DATA_DIR"):
+        _dd = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+        if os.path.isdir(_dd):
+            os.environ["DATA_DIR"] = _dd
+            store.DATA_DIR = _dd
+            store.DB_PATH = os.path.join(_dd, "bot.db")
     store.init_db()
     tok = C.UPSTOX_ACCESS_TOKEN or store.get_state("upstox_token")
     if not tok:
