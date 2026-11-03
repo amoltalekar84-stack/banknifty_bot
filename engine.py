@@ -31,8 +31,9 @@ import risk
 import store
 from config import ist_now
 from strategy import analyze, parse_candles
-from upstox_api import (UpstoxError, get_ltp, get_option_chain,
-                        get_prev_close, get_today_candles, place_order)
+from upstox_api import (UpstoxError, chain_lot, get_ltp, get_market_status,
+                        get_option_chain, get_prev_close, get_today_candles,
+                        place_order)
 
 _started = False
 _lock = threading.Lock()
@@ -149,9 +150,15 @@ def _tick():
     if store.get_state("day_init") != date:
         store.set_state("day_init", date)
         from telegram_bot import notify
+        tok = store.get_state("upstox_token")
+        if not tok:
+            toktxt = "❌ नाही (/code पाठवा)"
+        elif store.get_state("token_date") != date:
+            toktxt = "⚠️ कालचा (रात्री 3:30 ला संपला — नवीन /code हवा)"
+        else:
+            toktxt = "✅ आजचा"
         notify(f"🌅 नवीन दिवस: {date}\n"
-               f"मोड: {store.get_state('mode', 'PAPER')} | "
-               f"टोकन: {'✅' if store.get_state('upstox_token') else '❌ नाही (/code पाठवा)'}")
+               f"मोड: {store.get_state('mode', 'PAPER')} | टोकन: {toktxt}")
 
     token = store.get_state("upstox_token")
     if not token:
@@ -164,6 +171,26 @@ def _tick():
                    "कोणताही सिम्बॉल ट्रेड होणार नाही.")
         return
 
+    # 🌅 पूर्व-बाजार टोकन-आठवण: टोकन "असला तरी" कालचा असेल तर आज 3:30 ला
+    # निश्चित संपला — 08:45/09:05 ला जोरदार आठवण (Upstox refresh-token
+    # फ्लो नाही, म्हणून रोजचा /code हा एकमेव मार्ग — वेळेवर लक्ष देऊ)
+    if store.get_state("token_date") != date:
+        from telegram_bot import notify
+        if now.time() >= _t("08:45") and \
+                store.get_state("tokstale_" + date) != "1":
+            store.set_state("tokstale_" + date, "1")
+            store.log_event("⚠️ टोकन कालचा — आजचा नवीन /code हवा (08:45 आठवण)")
+            notify("⚠️ टोकन कालचा आहे — रात्री 3:30 ला संपला!\n"
+                   "नवीन टोकन: ① /token पाठवा → लॉग-इन लिंक येईल\n"
+                   "② लिंक उघडून लॉग-इन करा → URL मधला code कॉपी\n"
+                   "③ इथे /code XXXXXX पाठवा\n"
+                   "नाहीतर आज कोणताही सिम्बॉल ट्रेड होणार नाही.")
+        if now.time() >= _t("09:05") and \
+                store.get_state("tokstale2_" + date) != "1":
+            store.set_state("tokstale2_" + date, "1")
+            notify("⏰ अजून जुना टोकन! बाजार 09:15 ला उघडणार — "
+                   "आता /code पाठवा, नाहीतर आजचा ORB सुटेल.")
+
     # प्रत्येक सिम्बॉल आपल्या वेळेत, आपल्या नियमांनी चालतो
     for S in C.active_symbols():
         try:
@@ -174,10 +201,41 @@ def _tick():
             store.log_event(f"engine[{S['key']}]: " + str(e))
 
 
+def _exchange_closed(S, token, now):
+    """खऱ्या एक्सचेंज-स्टेटसने सुट्टी ओळख (फक्त nominal वेळेत).
+    'NORMAL_CLOSE' = एक्सचेंज बंद → True (हा सिम्बॉल वगळा).
+    API अयशस्वी/अज्ञात स्टेटस → False (fail-open — जुने वर्तन तसेच).
+    उदा. 10-Nov-2026 Diwali-Balipratipada: NSE बंद, MCX सुरू —
+    NSE सिम्बॉल्स निरोपाने वगळतात, MCX सामान्य ट्रेड करतो.
+    बंद करण्यासाठी env: MKT_STATUS=NO"""
+    if os.getenv("MKT_STATUS", "YES").strip().upper() == "NO":
+        return False
+    if not (_t(S["market_open"]) <= now.time() <= _t(S["market_close"])):
+        return False                      # nominal वेळेबाहेर — जुनेच नियम
+    st = get_market_status(token, S["seg"])
+    if st != "NORMAL_CLOSE":
+        return False
+    date = now.strftime("%Y-%m-%d")
+    key = "holiday_" + date + "_" + S["seg"]
+    if store.get_state(key) != "1":
+        store.set_state(key, "1")
+        store.log_event(f"🏳️ {S['seg']} आज बंद (market-status: {st}) — "
+                        f"{S['label']} वगळला")
+        from telegram_bot import notify
+        notify(f"🏳️ {S['seg']} एक्सचेंज आज बंद आहे (सुट्टी/विशेष वेळ).\n"
+               f"आज {S['label']} वगळला जाईल — इतर विभागांचे सिम्बॉल्स "
+               f"सामान्य चालू राहतील.")
+    return True
+
+
 def _tick_symbol(S, token, now):
     from telegram_bot import notify
     date = now.strftime("%Y-%m-%d")
     skey = S["key"]
+
+    # 🏳️ एक्सचेंजच बंद (सुट्टी/विशेष वेळ) → या विभागाचे सर्व वगळा
+    if _exchange_closed(S, token, now):
+        return
 
     # दैनिक अहवाल (BN 15:20 / CU 23:10) — बाजार-वेळ तपासणीच्या आधी
     if now.time() >= _t(S["summary_at"]) and \
@@ -324,10 +382,12 @@ def _maybe_enter(S, date, token, now):
 
 def _pick_option(S, token, spot, side):
     """NSE/BSE इंडेक्स: ATM (सर्वात जवळचा स्ट्राइक) ऑप्शन निवडा;
-    महाग पडल्यास शेजारचा बघा. S = सिम्बॉल config (आपला index_key + lot + भांडवल)"""
+    महाग पडल्यास शेजारचा बघा. S = सिम्बॉल config (आपला index_key + lot + भांडवल)
+    खरा लॉट chain मधून आपोआप (NSE ने लॉट बदलला तरी बरोबर)."""
     chain = get_option_chain(token, S["index_key"])
     if not chain:
         return None
+    qlot = chain_lot(S["index_key"]) or S["lot"]     # खरा लॉट (आपोआप)
     expiries = sorted({(r.get("expiry_date") or r.get("expiry"))
                        for r in chain
                        if (r.get("expiry_date") or r.get("expiry"))})
@@ -350,10 +410,10 @@ def _pick_option(S, token, spot, side):
         if not ltp or float(ltp) <= 0:
             continue
         ltp = float(ltp)
-        if ltp * S["lot"] > paper._capital(S) * 0.90:
+        if ltp * qlot > paper._capital(S) * 0.90:
             continue                         # हा ऑप्शन महाग → पुढचा बघा
         return {"key": key, "strike": float(row.get("strike_price") or 0),
-                "expiry": near, "ltp": ltp}
+                "expiry": near, "ltp": ltp, "lot": int(qlot)}
     return None
 
 
@@ -534,17 +594,22 @@ def _force_close(S, pos, token, now):
 
 def _live_open(sig, opt, token, date, now, S=None):
     S = S or C.BANKNIFTY
-    order_id = place_order(token, opt["key"], S["lot"], "BUY")
-    store.log_event(f"LIVE BUY {opt['key']} qty={S['lot']} order={order_id}")
+    qty = int(opt.get("lot") or S["lot"])   # 🐛 दुरुस्ती: MCX वर ऑप्शनचा खरा लॉट
     entry = round(opt["ltp"] * (1 + C.SLIPPAGE), 2)
+    cost = entry * qty
+    if cost > _capital(S) * 0.90:           # PAPER प्रमाणेच भांडवल-गार्ड
+        return None, (f"भांडवल अपुरे ({S['label']}): 1 lot साठी ₹{cost:,.0f} "
+                      f"लागतील, उपलब्ध ₹{_capital(S):,.0f} (90% वापरले जातात)")
+    order_id = place_order(token, opt["key"], qty, "BUY")
+    store.log_event(f"LIVE BUY {opt['key']} qty={qty} order={order_id}")
     sl = round(entry * (1 - S["sl_pct"] / 100.0), 2)
     tg = round(entry * (1 + S["tp2_pct"] / 100.0), 2)
     tid = store.open_trade(date, "LIVE", sig["side"], opt["key"], opt["strike"],
-                           opt["expiry"], S["lot"], entry, sl, tg,
+                           opt["expiry"], qty, entry, sl, tg,
                            sig.get("time", ""), S["key"])
     store.set_legs(tid, [])
     return {"id": tid, "entry": entry, "sl": sl, "target": tg,
-            "qty": S["lot"]}, ""
+            "qty": qty}, ""
 
 
 # ------------------------------------------------------------------

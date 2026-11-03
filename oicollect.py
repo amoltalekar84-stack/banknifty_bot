@@ -23,7 +23,7 @@ from datetime import time as dtime
 import config as C
 import store
 from config import ist_now
-from upstox_api import get_ltp, get_option_chain
+from upstox_api import get_ltp, get_market_status, get_option_chain
 
 INTERVAL_SEC = 300                     # 5 मिनिटे
 VIX_KEY = "NSE_INDEX|India VIX"        # रेजिम-फिल्टर — स्ट्रॅटेजी अभ्यासासाठी
@@ -239,6 +239,14 @@ def _loop():
             tdate = store.get_state("token_date")
             if (tok and tdate == n.strftime("%Y-%m-%d")
                     and _in_market_hours(n)):
+                st = None                     # 🏳️ NSE सुट्टी तपासा — fail-open
+                try:
+                    st = get_market_status(tok, "NSE")
+                except Exception:
+                    st = None
+                if st == "NORMAL_CLOSE":      # चेन जुनीच राहील — कॉल वाया
+                    time.sleep(INTERVAL_SEC)
+                    continue
                 vix = collect_vix(tok)        # 📈 VIX — चेनहून स्वतंत्र, निरागद
                 res = collect_all_once(tok)
                 ok = [r for r in res if r["m"]]

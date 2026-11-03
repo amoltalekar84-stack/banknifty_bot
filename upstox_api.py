@@ -187,31 +187,54 @@ def get_hist_candles_v3(token, instrument_key, unit, interval, from_date, to_dat
     return []
 
 
-_expiry_cache = {}            # index_key → (आजची तारीख, expiry) — दिवसात एकदाच resolve
+_expiry_cache = {}            # index_key → (आजची तारीख, expiry, lot) — दिवसात एकदाच
 
 
 def get_near_expiry(token, index_key):
-    """option/contract (expiry ऐच्छिक) → आजपासून जवळची expiry (YYYY-MM-DD)"""
+    """option/contract → (जवळची expiry YYYY-MM-DD, खरा lot_size).
+    लॉट NSE/BSE ने कधीही बदलला तरी बॉट आपोआप नवीन लॉट वापरेल
+    (config हा फक्त fallback)."""
     today = ist_now().strftime("%Y-%m-%d")
     j = _get("/option/contract", token, params={"instrument_key": index_key})
-    exps = sorted({r.get("expiry") for r in (j.get("data") or [])
-                   if r.get("expiry")})
+    rows = j.get("data") or []
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
     future = [e for e in exps if e >= today]
-    return future[0] if future else (exps[-1] if exps else None)
+    exp = future[0] if future else (exps[-1] if exps else None)
+    lot = None
+    for want in ([exp, None] if exp else [None]):   # आधी निवडलेल्या expiry-चा लॉट
+        for r in rows:
+            if want and r.get("expiry") != want:
+                continue
+            try:
+                lv = int(float(r.get("lot_size") or 0))
+            except (TypeError, ValueError):
+                continue
+            if lv > 0:
+                lot = lv
+                break
+        if lot:
+            break
+    return exp, lot
+
+
+def chain_lot(index_key):
+    """कॅश केलेला खरा लॉट (get_option_chain नंतरच) किंवा None"""
+    c = _expiry_cache.get(index_key)
+    return c[2] if c and len(c) > 2 else None
 
 
 def get_option_chain(token, index_key):
     """ऑप्शन चेन. ⚠️ Upstox नवीन नियम: expiry_date आता आवश्यक
     (नसेल तर 400 Bad Request!). → दिवसात एकदा option/contract मधून
-    जवळची expiry resolve करून cache; रिकामी चेन आली तर cache तोडून
-    पुढच्या वेळी पुन्हा resolve."""
+    जवळची expiry + खरा lot resolve करून cache; रिकामी चेन आली तर
+    cache तोडून पुढच्या वेळी पुन्हा resolve."""
     today = ist_now().strftime("%Y-%m-%d")
     c = _expiry_cache.get(index_key)
     if not c or c[0] != today:
-        exp = get_near_expiry(token, index_key)
+        exp, lot = get_near_expiry(token, index_key)
         if not exp:
             raise UpstoxError(f"near-expiry सापडली नाही ({index_key})")
-        _expiry_cache[index_key] = (today, exp)
+        _expiry_cache[index_key] = (today, exp, lot)
         c = _expiry_cache[index_key]
     j = _get("/option/chain", token, params={"instrument_key": index_key,
                                              "expiry_date": c[1]})
@@ -219,6 +242,34 @@ def get_option_chain(token, index_key):
     if not rows:
         _expiry_cache.pop(index_key, None)
     return rows
+
+
+# ------------------------------------------------------------------
+# एक्सचेंज-स्टेटस (सुट्टी/विशेष वेळ ओळखणे)
+# ------------------------------------------------------------------
+_mkt_cache = {}               # exchange → (monotonic_ts, status)
+_MKT_TTL = 600                # 10 मिनिटे कॅश
+
+
+def get_market_status(token, exchange):
+    """एक्सचेंजचा खरा स्टेटस: 'NORMAL_OPEN' / 'NORMAL_CLOSE' / …
+    अयशस्वी/अज्ञात → None (कॉलर fail-open — जुने वर्तन तसेच).
+    सुट्टीच्या दिवशी एक्सचेंज 'NORMAL_CLOSE' देते — उदा. 10-Nov-2026
+    Diwali-Balipratipada: NSE बंद पण MCX सुरू → बॉट फक्त NSE सिम्बॉल्स
+    वगळतो, MCX सामान्य ट्रेड करतो. 10 मिनिटे कॅश."""
+    c = _mkt_cache.get(exchange)
+    now = time.monotonic()
+    if c and now - c[0] < _MKT_TTL:
+        return c[1]
+    try:
+        ex_enc = urllib.parse.quote(exchange, safe="")
+        j = _get(f"{BASE}/market/status/{ex_enc}", token, retries=1)
+        st = ((j.get("data") or {}).get("status")) or None
+    except Exception:
+        st = None
+    if st:
+        _mkt_cache[exchange] = (now, st)
+    return st
 
 
 # ------------------------------------------------------------------

@@ -36,7 +36,7 @@ HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKN
 
 कमांड्स:
 /start — बॉट सुरू + तुम्ही admin होता (एकदाच)
-/token — आजची लॉग-इन लिंक मागा (रोज सकाळी पहिले पाऊल)
+/token — आजची लॉग-इन लिंक मागा (रोज सकाळी पहिले पाऊल; 08:45 ला बॉट स्वतः आठवण देईल)
 /code <कोड> — लिंक उघडून लॉग-इन केल्यावर URL मधला लहान code → बॉट स्वतः टोकन बनवतो ⭐ (रोज फक्त हे पुरेसे!) 🔒 आपोआप पुसला जातो
 /settoken <टोकन> — लांब eyJ… access token असेल तरच थेट (बॅकअप — /code ची जागा घेतो, दोन्हीची गरज नाही) 🔒 आपोआप पुसला जातो
 /status — सध्याची स्थिती (सर्व 9 सिम्बॉल्स)
@@ -163,7 +163,8 @@ async def cmd_code(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"आज बॉट स्वयंचलित ट्रेड करेल "
             f"({store.get_state('mode', 'PAPER')} मोड).\n"
             "🔔 ENTRY/EXIT अलर्ट इथेच येतील.\n"
-            "🔒 कोड चॅटमधून आपोआप पुसला गेला.")
+            "🔒 कोड चॅटमधून आपोआप पुसला गेला.\n"
+            "⏰ टोकन उद्या सकाळी 3:30 ला संपेल — उद्या 08:45 ला बॉट आठवण देईल.")
     except UpstoxError as ex:
         await prog.edit_text(
             "❌ अयशस्वी: " + str(ex)[:250] +
@@ -209,7 +210,8 @@ async def cmd_token(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     store.set_state("token_date", ist_now().strftime("%Y-%m-%d"))
     await prog.edit_text(
         f"✅ टोकन सेट! स्वागत {who}\nबॉट स्वयंचलित ट्रेड करेल.\n"
-        "🔒 टोकन चॅटमधून आपोआप पुसला गेला.")
+        "🔒 टोकन चॅटमधून आपोआप पुसला गेला.\n"
+        "⏰ टोकन उद्या सकाळी 3:30 ला संपेल — उद्या 08:45 ला बॉट आठवण देईल.")
 
 
 async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
