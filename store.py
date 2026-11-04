@@ -71,6 +71,25 @@ def init_db():
             ts TEXT, date TEXT, vix REAL);
 
         CREATE INDEX IF NOT EXISTS idx_vix_date ON vix_snap(date);
+
+        CREATE TABLE IF NOT EXISTS swing_trades(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, symbol TEXT, side TEXT,
+            option_key TEXT, strike REAL, expiry TEXT,
+            qty INTEGER, entry REAL, sl REAL,
+            spot_entry REAL, ema20 REAL, ema50 REAL,
+            status TEXT, reason TEXT, pnl REAL, charges REAL,
+            exit_price REAL, closed TEXT, legs TEXT);
+
+        CREATE INDEX IF NOT EXISTS idx_sw_status ON swing_trades(status);
+
+        CREATE TABLE IF NOT EXISTS swing_scan(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, symbol TEXT, spot REAL, prev_high REAL,
+            prev_close REAL, trend INTEGER, triggered INTEGER,
+            note TEXT);
+
+        CREATE INDEX IF NOT EXISTS idx_swscan_date ON swing_scan(date);
         """)
         # जुन्या DB मध्ये charges column नाही → जोडा (migration)
         try:
@@ -303,3 +322,96 @@ def vix_range(date):
     if r:
         return r["lo"], r["hi"]
     return None, None
+
+
+# ---------------- Swing (वैयक्तिक शेअर्स — वेगळा मॉड्यूल) ----------------
+def swing_insert(date, symbol, side, option_key, strike, expiry, qty,
+                 entry, sl, spot_entry, ema20, ema50):
+    return _q(
+        """INSERT INTO swing_trades(date,symbol,side,option_key,strike,expiry,
+                                      qty,entry,sl,spot_entry,ema20,ema50,status,legs)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'OPEN','[]')""",
+        (date, symbol, side, option_key, strike, expiry, qty, entry, sl,
+         spot_entry, ema20, ema50), commit=True)
+
+
+def swing_get(tid):
+    row = _q("SELECT * FROM swing_trades WHERE id=?", (tid,), fetch="one")
+    return dict(row) if row else None
+
+
+def swing_open(symbol=None):
+    if symbol:
+        rows = _q("SELECT * FROM swing_trades WHERE status='OPEN' AND symbol=? "
+                  "ORDER BY id", (symbol,), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM swing_trades WHERE status='OPEN' ORDER BY id",
+                  fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def swing_update_sl(tid, sl):
+    _q("UPDATE swing_trades SET sl=? WHERE id=?", (sl, tid), commit=True)
+
+
+def swing_close(tid, exit_price, pnl, charges, reason, closed_str):
+    _q("""UPDATE swing_trades SET exit_price=?, pnl=?, charges=?,
+              status='CLOSED', reason=?, closed=? WHERE id=?""",
+       (exit_price, pnl, charges, str(reason)[:200], closed_str, tid),
+       commit=True)
+
+
+def swing_today(date, symbol=None):
+    if symbol:
+        rows = _q("SELECT * FROM swing_trades WHERE date=? AND symbol=? ORDER BY id",
+                  (date, symbol), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM swing_trades WHERE date=? ORDER BY id",
+                  (date,), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def swing_month(prefix):
+    rows = _q("SELECT * FROM swing_trades WHERE date LIKE ? ORDER BY id",
+              (prefix + "%",), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def swing_total_pnl():
+    row = _q("SELECT COALESCE(SUM(pnl),0) AS s FROM swing_trades "
+             "WHERE status='CLOSED'", fetch="one")
+    return round(row["s"], 2) if row else 0.0
+
+
+def swing_scan_upsert(date, symbol, spot, prev_high, prev_close,
+                      trend, triggered, note):
+    row = _q("SELECT id FROM swing_scan WHERE date=? AND symbol=?",
+             (date, symbol), fetch="one")
+    if row:
+        _q("""UPDATE swing_scan SET spot=?, prev_high=?, prev_close=?,
+                  trend=?, triggered=?, note=? WHERE id=?""",
+           (spot, prev_high, prev_close, trend, triggered, note, row["id"]),
+           commit=True)
+        return row["id"]
+    return _q("""INSERT INTO swing_scan(date,symbol,spot,prev_high,
+                          prev_close,trend,triggered,note)
+                 VALUES(?,?,?,?,?,?,?,?)""",
+              (date, symbol, spot, prev_high, prev_close, trend,
+               triggered, note), commit=True)
+
+
+def swing_scan_today(date):
+    rows = _q("SELECT * FROM swing_scan WHERE date=? ORDER BY triggered DESC, symbol",
+              (date,), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def swing_set_ltp(tid, ltp):
+    set_state("swing_ltp_" + str(tid), str(ltp))
+
+
+def swing_get_ltp(tid, default=None):
+    try:
+        return float(get_state("swing_ltp_" + str(tid), default))
+    except (TypeError, ValueError):
+        return default

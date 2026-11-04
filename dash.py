@@ -16,6 +16,11 @@ import config as C
 import store
 from config import ist_now
 
+try:
+    import swing
+except Exception:                                  # module नसेल तरी डॅश चालणार
+    swing = None
+
 IST = ZoneInfo("Asia/Kolkata")
 _MONO = "'JetBrains Mono','Noto Sans Devanagari',monospace"
 
@@ -506,6 +511,7 @@ def _sym_card(S, n, date):
 
 def _timeline(n):
     nodes = [("09:00", "MCX ओपन"), ("09:15", "NSE ओपन + ORB"),
+             ("09:20", "🎯 Swing स्कॅन"),
              ("09:45", "एंट्री कार्ड्स"), ("15:05", "BN स्क्वेअर-ऑफ"),
              ("20:30", "EVAL-DAILY अहवाल"), ("23:05", "MCX स्क्वेअर-ऑफ")]
     nowm = n.strftime("%H:%M")
@@ -596,6 +602,94 @@ def _table(date):
             f'<tbody>{"".join(trs)}</tbody></table></div>')
 
 
+def _swing_scan_rows(date):
+    rows = store.swing_scan_today(date)
+    if not rows:
+        return ('<div class="row" style="color:#475569">आजचा स्कॅन अजून झाला नाही '
+                '(रोज 09:20 नंतर)…</div>')
+    out = []
+    for r in rows[:10]:
+        icon = "🎯" if r["triggered"] else ("👁" if r["trend"] else "—")
+        spot = ("₹{:,.2f}".format(r["spot"]) if r["spot"] else "—")
+        hi = ("₹{:,.2f}".format(r["prev_high"]) if r["prev_high"] else "—")
+        out.append(f'<div class="row"><span class="tm">{icon}</span>'
+                   f'<span>{_h.escape(str(r["symbol"]))} · {spot} · '
+                   f'हाय {hi} · {_h.escape(str(r["note"] or ""))}</span></div>')
+    return "".join(out)
+
+
+def _swing(n, date):
+    """🎯 Swing विभाग — वैयक्तिक शेअर्सचे ऑप्शन-बायिंग (स्वतंत्र ₹1L बाजू)"""
+    if swing is None or not getattr(swing, "ENABLED", False):
+        return ""
+    cap = swing._capital()
+    opens = store.swing_open()
+    dep = swing.deployed_premium()
+    orisk = swing.open_risk()
+    mts = [t for t in store.swing_month(date[:7]) if t["status"] == "CLOSED"]
+    mtd = round(sum((t["pnl"] or 0) for t in mts), 2)
+    tot = store.swing_total_pnl()
+    risk_pct = min(100.0, orisk / swing.OPEN_RISK_CAP * 100.0) \
+        if swing.OPEN_RISK_CAP else 0
+
+    # उघड्या स्थितींची ओळी
+    pos_rows = []
+    for p in opens:
+        ltp = store.swing_get_ltp(p["id"])
+        mtm = round((ltp - float(p["entry"])) * int(p["qty"]), 2) if ltp else None
+        mtm_html = (f'<span class="{_cls(mtm)} m">{_sign(mtm)}{_inr(abs(mtm))}</span>'
+                    if mtm is not None else '<span class="m">—</span>')
+        held = swing.sessions_held(p["date"], date)
+        ce = "CE" if "CE" in str(p.get("option_key") or "").upper() else "PE"
+        pos_rows.append(
+            f'<tr class="oi"><td>{_h.escape(p["symbol"])}</td>'
+            f'<td class="m">{p["strike"]:.0f} {ce}</td>'
+            f'<td class="m">{_hhmm(p["opened"] if "opened" in p.keys() else p["date"])}</td>'
+            f'<td class="m">{held} सेशन</td>'
+            f'<td class="m">₹{float(p["entry"]):.2f}</td>'
+            f'<td class="m">{("₹%.2f" % ltp) if ltp else "—"}</td>'
+            f'<td>{mtm_html}</td>'
+            f'<td class="m">₹{float(p["sl"]):.2f}</td></tr>')
+    pos_html = (
+        '<div class="tblwrap"><table class="tbl"><thead><tr><th>शेअर</th><th>कॉन्ट्रॅक्ट</th>'
+        '<th>एंट्री</th><th>धरला</th><th>प्रीमियम</th><th>LTP</th><th>MTM</th><th>SL</th></tr></thead>'
+        f'<tbody>{"".join(pos_rows)}</tbody></table></div>'
+        if pos_rows else
+        '<div class="row" style="color:#475569">उघडी स्थिती नाही — '
+        'सिग्नल भेटला की इथे दिसेल (Telegram वरही कार्ड येते)</div>')
+
+    # आज बुक झालेले (शेवटचे 4)
+    closed_today = [t for t in store.swing_today(date) if t["status"] == "CLOSED"]
+    cl_rows = []
+    for t in closed_today[-4:]:
+        pnl = t["pnl"] or 0
+        cl_rows.append(f'<div class="row"><span class="tm">{"✅" if pnl >= 0 else "❌"}</span>'
+                       f'<span>{_h.escape(t["symbol"])} {t["strike"]:.0f}CE · '
+                       f'{_h.escape(str(t["reason"] or ""))[:40]} · '
+                       f'{_spnl(pnl)}</span></div>')
+
+    return f"""
+<div class="sec"><span class="t">🎯 Swing — वैयक्तिक शेअर्स ({len(swing.UNIVERSE)} निवडक · ऑप्शन-बायिंग · 2–10 दिवस)</span><span class="ln"></span></div>
+<div class="kpis">
+  <div class="kpi gx"><div class="ic">💰</div><div class="lab">Swing बाजू (स्वतंत्र)</div>
+    <div class="val">{_inr(cap)}</div><div class="sub">ORB भांडवलापासून वेगळी</div></div>
+  <div class="kpi gx"><div class="ic">◉</div><div class="lab">उघड्या स्थिती</div>
+    <div class="val">{len(opens)}/{swing.MAX_POS}</div><div class="sub">प्रीमियम {_inr(dep)} वापरला</div></div>
+  <div class="kpi gx"><div class="ic">🛡️</div><div class="lab">उघड-धोका (SL-आधारित)</div>
+    <div class="val">{_inr(orisk)}</div><div class="sub">मर्यादा {_inr(swing.OPEN_RISK_CAP)}</div>
+    <div class="lbar" title="उघड-धोका {risk_pct:.0f}%"><i style="width:{risk_pct:.0f}%"></i></div></div>
+  <div class="kpi gx"><div class="ic">📈</div><div class="lab">Swing MTD</div>
+    <div class="val {_cls(mtd)}">{_sign(mtd)}{_inr(abs(mtd))}</div>
+    <div class="sub">सुरुवातीपासून {_k(tot)} • {len(mts)} ट्रेड्स</div></div>
+</div>
+<div class="duo">
+  <div class="panel gx"><div class="ptitle">◉ उघड्या Swing स्थिती</div>{pos_html}
+    {(''.join(cl_rows)) if cl_rows else ''}</div>
+  <div class="panel gx"><div class="ptitle">🔍 आजचा स्कॅन — ट्रेंड+ट्रिगर (टॉप 10)</div>
+    <div class="jr">{_swing_scan_rows(date)}</div></div>
+</div>"""
+
+
 def build_dashboard():
     n = ist_now()
     date = n.strftime("%Y-%m-%d")
@@ -606,6 +700,7 @@ def build_dashboard():
         _kpis(n, date),
         '<div class="sec"><span class="t">🚪 6 दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>',
         '<div class="syms">' + "".join(_sym_card(s, n, date) for s in C.active_symbols()) + "</div>",
+        _swing(n, date),
         '<div class="sec"><span class="t">🕒 दिवसाचे वेळापत्रक (डिटरमिनिस्टिक)</span><span class="ln"></span></div>',
         _timeline(n),
         '<div class="sec"><span class="t">📡 लाइव्ह आढावा</span><span class="ln"></span></div>',

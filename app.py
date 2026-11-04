@@ -168,6 +168,12 @@ def eval_payload(date=None, k: str = ""):
     for s in C.SYMBOLS:
         if s["key"] != "BANKNIFTY":
             data[s["key"].lower()] = _sym_payload(s, date)
+    # 🎯 Swing मॉड्यूल — वैयक्तिक शेअर्सचे ऑप्शन-बायिंग (स्वतंत्र बाजू)
+    try:
+        import swing
+        data["swing"] = swing.eval_block(date)
+    except Exception as _se:
+        data["swing"] = {"enabled": False, "error": repr(_se)[:120]}
     # बॉट जर्नल — शेवटचे इव्हेंट (EOD रिपोर्ट/पडताळणीसाठी)
     try:
         data["events"] = [{"ts": e["ts"], "msg": str(e.get("msg", ""))}

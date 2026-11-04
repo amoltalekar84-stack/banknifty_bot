@@ -42,6 +42,7 @@ HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKN
 /status — सध्याची स्थिती (सर्व 9 सिम्बॉल्स)
 /dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
 /positions — उघड्या पोझिशन्स (सर्व सिम्बॉल्स)
+/swing — 🎯 Swing विभाग: वैयक्तिक शेअर्सचे ऑप्शन-स्विंग (स्कॅन/स्थिती/P&L)
 /trades — आजचे सर्व ट्रेड्स
 /eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
 /oi [सिम्बॉल] — OI विश्लेषण: PCR, Max Pain, भिंती, IV, ग्रीक्स 🧠 (बाजार वेळेत आपोआप जमा)
@@ -350,6 +351,13 @@ def _eod_text(date=None):
     lines.append(f"\n💰 <b>आजचे एकूण निव्वल: {_inrn(day_tot)}</b>"
                  f" | सर्वकालीन: {_inrn(store.total_pnl())}"
                  f" (खर्च ₹{store.total_charges():,.0f})")
+    try:                                   # 🎯 Swing विभाग — स्वतंत्र बाजू
+        import swing
+        sl_lines = swing.eod_lines(date)
+        if sl_lines:
+            lines.extend(sl_lines)
+    except Exception:
+        pass
     try:                                   # 📜 दिवसभरची मुख्य कारणे — जर्नल
         evs = store.last_events(3)
         if evs:
@@ -404,6 +412,23 @@ async def _eod_loop(app):
         except Exception as e:
             print("EOD loop err:", repr(e))
         await asyncio.sleep(60)
+
+
+async def cmd_swing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/swing — 🎯 वैयक्तिक शेअर्सचे swing-मॉड्यूल: उघड्या स्थिती + स्कॅन + P&L"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    try:
+        import swing
+        txt = swing.tele_text()
+    except Exception as ex:
+        txt = "⚠️ Swing मॉड्यूल उपलब्ध नाही: " + repr(ex)[:120]
+    try:
+        await update.effective_message.reply_text(txt, parse_mode="HTML")
+    except Exception:
+        await update.effective_message.reply_text(txt)
 
 
 async def cmd_positions(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -789,6 +814,7 @@ async def _serve():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("dashkey", cmd_dashkey))
     app.add_handler(CommandHandler("positions", cmd_positions))
+    app.add_handler(CommandHandler("swing", cmd_swing))
     app.add_handler(CommandHandler("oi", cmd_oi))
     app.add_handler(CommandHandler("trades", cmd_trades))
     app.add_handler(CommandHandler("eod", cmd_eod))
