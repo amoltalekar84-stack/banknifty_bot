@@ -231,6 +231,34 @@ padding:10px 26px!important;box-shadow:0 10px 24px -8px rgba(99,102,241,.6)!impo
   .dash table.tbl.has{min-width:620px}
   .dash .kpis{gap:8px}
 }
+/* 📋 प्रति-instrument ट्रेड-तपशील — click-एक्सपॅन्ड (10s-रिफ्रेशनंतरही उघडं राहतं) */
+.dash details.symdet{margin-top:8px;border-radius:12px;
+  border:1px solid rgba(148,163,184,.18);background:rgba(2,6,17,.60);
+  padding:2px 12px 10px}
+.dash .detbtn{display:flex;justify-content:space-between;align-items:center;gap:8px;
+  margin-top:10px;padding:9px 12px;border-radius:10px;cursor:pointer;user-select:none;
+  font-size:11.5px;font-weight:700;color:#a5b4fc;background:rgba(99,102,241,.10);
+  border:1px solid rgba(99,102,241,.30);list-style:none;
+  -webkit-tap-highlight-color:transparent}
+.dash .detbtn:hover{background:rgba(99,102,241,.22)}
+.dash .detbtn::-webkit-details-marker{display:none}
+.dash .detbtn .cnt{color:#818cf8}
+.dash .detbtn .when-open{display:none;color:#fca5a5}
+.dash details[open]>.detbtn .when-shut{display:none}
+.dash details[open]>.detbtn .when-open{display:inline}
+.dash .detbody{margin-top:6px}
+.dash .dth{font-size:11px;font-weight:800;letter-spacing:.06em;color:#7dd3fc;margin:12px 0 4px}
+.dash .dthsub{font-size:10px;color:#64748b;margin:8px 0 2px;font-weight:700}
+.dash .trow{padding:6px 0;border-bottom:1px dashed rgba(148,163,184,.10);
+  font-size:11.8px;line-height:1.5;color:#e2e8f0}
+.dash .trow .tl{display:block;color:#94a3b8;font-size:10.8px;padding-left:14px}
+.dash .evline{display:flex;gap:8px;padding:4.5px 0;
+  border-bottom:1px dashed rgba(148,163,184,.08);font-size:11.6px;line-height:1.45}
+.dash .evline .ets{color:#38bdf8;font-family:MONOFONT;white-space:nowrap;
+  font-size:10.4px;padding-top:1px}
+.dash .evline .emsg{color:#cbd5e1;word-break:break-word}
+.dash .dtempty{color:#475569;font-size:11.5px;padding:6px 0}
+.dash .sym .shead{cursor:pointer}
 """.replace("MONOFONT", _MONO)
 
 HEAD = (
@@ -246,6 +274,21 @@ HEAD = (
     '<script>try{var m=location.search.match(/[?&]k=([A-Za-z0-9]+)/);'
     "if(m){document.cookie='dk='+m[1]+';path=/;max-age=2592000;SameSite=Lax';"
     "history.replaceState(null,'',location.pathname);}}catch(e){}</script>"
+    # 📋 ट्रेड-तपशील पॅनेल — उघड-स्थिती लक्षात ठेवून 10s-रिफ्रेशनंतर पुन्हा उघडी करतो
+    '<script>(function(){var OPEN={};'
+    "document.addEventListener('toggle',function(e){var t=e.target;"
+    "if(t&&t.classList&&t.classList.contains('symdet')){"
+    "try{OPEN[t.getAttribute('data-detid')]=t.open;}catch(e){}}},true);"
+    "document.addEventListener('click',function(ev){"
+    "var el=ev.target.closest('[data-detid]');"
+    "if(!el||el.tagName==='SUMMARY'||!el.classList.contains('shead'))return;"
+    "var d=document.getElementById('det-'+el.getAttribute('data-detid'));"
+    "if(d){d.open=!d.open;}},false);"
+    "function apply(){var ds=document.querySelectorAll('details.symdet');"
+    "for(var i=0;i<ds.length;i++){var id=ds[i].getAttribute('data-detid');"
+    "if(id in OPEN){try{ds[i].open=OPEN[id];}catch(e){}}}}"
+    "new MutationObserver(apply).observe(document.documentElement,"
+    "{childList:true,subtree:true});})();</script>"
 )
 
 
@@ -491,10 +534,19 @@ def _sym_card(S, n, date):
     halt_html = ('<div class="haltr">🛑 दैनिक तोटा मर्यादा भितली — आज पुढचे ट्रेड नाहीत</div>'
                  if halted else "")
 
+    # 📋 प्रति-instrument तपशील — आजचे ट्रेड्स + सर्व इव्हेंट (मागील 3 दिवस)
+    mid = n.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    try:
+        evs = store.events_for([S["label"], "engine[" + S["key"] + "]"],
+                               since_ts=mid - 3 * 86400, limit=200)
+        det_html = _inst_detail(S, date, trs, evs, mid)
+    except Exception:
+        det_html = ""
+
     return f"""
 <div class="sym gx" style="--sc:{st['c']}">
   <i class="acc"></i>
-  <div class="shead">
+  <div class="shead" data-detid="{S['key']}">
     <div class="sname"><span class="sic">{st['icon']}</span>{_h.escape(S['label'])}
       <span class="segc">{S['seg']}</span></div>
     {mkt_chip}
@@ -506,6 +558,7 @@ def _sym_card(S, n, date):
     <span>•</span> खर्च {_inr(chg)}</div>
   {loss_bar}{opstrip}{halt_html}
   <div class="chips">{''.join(f'<span class="chip">{c}</span>' if not c.startswith('<') else c for c in chips)}</div>
+  {det_html}
 </div>"""
 
 
@@ -602,6 +655,74 @@ def _table(date):
             f'<tbody>{"".join(trs)}</tbody></table></div>')
 
 
+def _evblocks(evs, mid, empty="इव्हेंट नाहीत"):
+    """इव्हेंट-यादी → आज + मागील 3 दिवस असे दोन गट (जुने→नवीन)"""
+    today_evs = [e for e in evs if e["ts"] >= mid]
+    old_evs = [e for e in evs if e["ts"] < mid]
+
+    def lines(rows, with_date):
+        out = []
+        for e in sorted(rows, key=lambda x: x["ts"]):
+            tm = datetime.fromtimestamp(e["ts"], IST).strftime(
+                "%d-%m %H:%M" if with_date else "%H:%M")
+            out.append(f'<div class="evline"><span class="ets">{tm}</span>'
+                       f'<span class="emsg">{_h.escape(str(e["msg"]))}</span></div>')
+        return "".join(out)
+
+    html = ""
+    if today_evs:
+        html += (f'<div class="dthsub">— आज ({len(today_evs)}) —</div>'
+                 + lines(today_evs, False))
+    if old_evs:
+        html += (f'<div class="dthsub">— आधीचे, मागील 3 दिवस ({len(old_evs)}) —</div>'
+                 + lines(old_evs, True))
+    return html or f'<div class="dtempty">{empty}</div>'
+
+
+def _trade_rows(trs):
+    """ट्रेड-यादी → कॉम्पॅक्ट ओळी (लेग/आंशिक-बुकिंगसह)"""
+    out = []
+    for t in trs:
+        pnl = t.get("pnl")
+        ic = "◉" if t["status"] == "OPEN" else ("✅" if (pnl or 0) >= 0 else "❌")
+        ex = f" → ₹{float(t['exit']):.2f}" if t.get("exit") else ""
+        pnl_s = (f'<span class="{_cls(pnl)}">{_sign(pnl)}{_inr(abs(pnl))}</span>'
+                 if pnl is not None else '<span class="m">चालू</span>')
+        legs = store.get_legs(t["id"])
+        leg_html = ""
+        if legs:
+            leg_html = '<span class="tl">↳ ' + " • ".join(
+                f"{_h.escape(str(l.get('label') or 'leg'))} "
+                f"₹{float(l.get('price') or 0):.2f}×{l.get('qty')}"
+                for l in legs) + "</span>"
+        reason = _h.escape(str(t.get("reason") or ""))[:48] or "—"
+        out.append(
+            f'<div class="trow">{ic} {_hhmm(t.get("opened"))} • '
+            f'{t["strike"]:.0f} {t["side"]} @ ₹{float(t["entry"]):.2f}{ex} '
+            f'• {reason} • {pnl_s}{leg_html}</div>')
+    return "".join(out)
+
+
+def _inst_detail(S, date, trs, evs, mid):
+    """📋 click-एक्सपॅन्ड — एका instrument चे आजचे ट्रेड्स (लेगसह) + सर्व इव्हेंट"""
+    st = SYM_STYLE.get(S["key"], {"c": "#818cf8", "icon": "📊"})
+    today_n = sum(1 for e in evs if e["ts"] >= mid)
+    trades_html = (_trade_rows(trs) if trs
+                   else '<div class="dtempty">आज ट्रेड नाही</div>')
+    return (
+        f'<details class="symdet" id="det-{S['key']}" data-detid="{S['key']}">'
+        f'<summary class="detbtn" data-detid="{S['key']}">'
+        f'<span class="when-shut">📋 सर्व ट्रेड-तपशील व इव्हेंट '
+        f'<span class="cnt">(आज {today_n} इव्हेंट • {len(trs)} ट्रेड)</span></span>'
+        f'<span class="when-open">✕ तपशील लपवा</span></summary>'
+        f'<div class="detbody">'
+        f'<div class="dth">💹 आजचे ट्रेड्स — {st['icon']} {_h.escape(S['label'])}</div>'
+        f'{trades_html}'
+        f'<div class="dth">📡 इव्हेंट-जर्नल — नियम/एंट्री/एग्झिट/एरर सर्व</div>'
+        f'{_evblocks(evs, mid)}'
+        f'</div></details>')
+
+
 def _swing_scan_rows(date):
     rows = store.swing_scan_today(date)
     if not rows:
@@ -631,6 +752,42 @@ def _swing(n, date):
     tot = store.swing_total_pnl()
     risk_pct = min(100.0, orisk / swing.OPEN_RISK_CAP * 100.0) \
         if swing.OPEN_RISK_CAP else 0
+
+    # 📋 Swing तपशील — आजचे swing ट्रेड्स + सर्व swing इव्हेंट
+    mid = n.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    try:
+        sw_evs = store.events_for(["Swing"], since_ts=mid - 3 * 86400, limit=200)
+    except Exception:
+        sw_evs = []
+    sw_today = store.swing_today(date)
+    sw_rows = []
+    for t in sw_today:
+        pnl = t.get("pnl")
+        ic = "◉" if t["status"] == "OPEN" else ("✅" if (pnl or 0) >= 0 else "❌")
+        ex = f" → ₹{float(t['exit']):.2f}" if t.get("exit") else ""
+        pnl_s = (f'<span class="{_cls(pnl)}">{_sign(pnl)}{_inr(abs(pnl))}</span>'
+                 if pnl is not None else '<span class="m">चालू</span>')
+        reason = _h.escape(str(t.get("reason") or ""))[:48] or "—"
+        held = swing.sessions_held(t["date"], date)
+        sw_rows.append(
+            f'<div class="trow">{ic} {_hhmm(t.get("opened") or t["date"])} • '
+            f'{_h.escape(t["symbol"])} {t["strike"]:.0f}CE @ ₹{float(t["entry"]):.2f}{ex} '
+            f'• {held} सेशन • {reason} • {pnl_s}</div>')
+    sw_ev_n = sum(1 for e in sw_evs if e["ts"] >= mid)
+    sw_empty = '<div class="dtempty">आज Swing ट्रेड नाही</div>'
+    sw_trades_html = "".join(sw_rows) or sw_empty
+    sw_det = (
+        f'<details class="symdet" id="det-SWING" data-detid="SWING">'
+        f'<summary class="detbtn" data-detid="SWING">'
+        f'<span class="when-shut">📋 सर्व Swing ट्रेड-तपशील व इव्हेंट '
+        f'<span class="cnt">(आज {sw_ev_n} इव्हेंट • {len(sw_today)} ट्रेड)</span></span>'
+        f'<span class="when-open">✕ तपशील लपवा</span></summary>'
+        f'<div class="detbody">'
+        f'<div class="dth">🎯 आजचे Swing ट्रेड्स — वैयक्तिक शेअर्स</div>'
+        f'{sw_trades_html}'
+        f'<div class="dth">📡 Swing इव्हेंट-जर्नल</div>'
+        f'{_evblocks(sw_evs, mid, 'Swing इव्हेंट नाहीत')}'
+        f'</div></details>')
 
     # उघड्या स्थितींची ओळी
     pos_rows = []
@@ -687,7 +844,8 @@ def _swing(n, date):
     {(''.join(cl_rows)) if cl_rows else ''}</div>
   <div class="panel gx"><div class="ptitle">🔍 आजचा स्कॅन — ट्रेंड+ट्रिगर (टॉप 10)</div>
     <div class="jr">{_swing_scan_rows(date)}</div></div>
-</div>"""
+</div>
+{sw_det}"""
 
 
 def build_dashboard():

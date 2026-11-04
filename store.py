@@ -149,6 +149,21 @@ def last_events(n=20):
     return [dict(r) for r in rows]
 
 
+def events_for(patterns, since_ts=None, limit=150):
+    """msg मध्ये दिलेल्या substring-पैकी कोणतीही असलेली इव्हेंट (नवीन आधी).
+    डॅशबोर्डच्या प्रति-instrument तपशील-पॅनेलसाठी — patterns = [label, ...]."""
+    pats = [str(p) for p in (patterns or []) if p]
+    if not pats:
+        return []
+    since_ts = float(since_ts) if since_ts else (time.time() - 86400)
+    where = " OR ".join(["msg LIKE ?"] * len(pats))
+    rows = _q(f"SELECT ts, msg FROM events WHERE ts >= ? AND ({where}) "
+              "ORDER BY id DESC LIMIT ?",
+              (since_ts,) + tuple("%" + p + "%" for p in pats) + (int(limit),),
+              fetch="all") or []
+    return [dict(r) for r in rows]
+
+
 # ---------------- trades (ट्रेड्स) ----------------
 def open_trade(date, mode, side, option_key, strike, expiry, qty, entry,
                sl, target, opened, symbol="BANKNIFTY"):
