@@ -710,13 +710,13 @@ def _inst_detail(S, date, trs, evs, mid):
     trades_html = (_trade_rows(trs) if trs
                    else '<div class="dtempty">आज ट्रेड नाही</div>')
     return (
-        f'<details class="symdet" id="det-{S['key']}" data-detid="{S['key']}">'
-        f'<summary class="detbtn" data-detid="{S['key']}">'
+        f'<details class="symdet" id="det-{S["key"]}" data-detid="{S["key"]}">'
+        f'<summary class="detbtn" data-detid="{S["key"]}">'
         f'<span class="when-shut">📋 सर्व ट्रेड-तपशील व इव्हेंट '
         f'<span class="cnt">(आज {today_n} इव्हेंट • {len(trs)} ट्रेड)</span></span>'
         f'<span class="when-open">✕ तपशील लपवा</span></summary>'
         f'<div class="detbody">'
-        f'<div class="dth">💹 आजचे ट्रेड्स — {st['icon']} {_h.escape(S['label'])}</div>'
+        f'<div class="dth">💹 आजचे ट्रेड्स — {st["icon"]} {_h.escape(S["label"])}</div>'
         f'{trades_html}'
         f'<div class="dth">📡 इव्हेंट-जर्नल — नियम/एंट्री/एग्झिट/एरर सर्व</div>'
         f'{_evblocks(evs, mid)}'
@@ -786,7 +786,7 @@ def _swing(n, date):
         f'<div class="dth">🎯 आजचे Swing ट्रेड्स — वैयक्तिक शेअर्स</div>'
         f'{sw_trades_html}'
         f'<div class="dth">📡 Swing इव्हेंट-जर्नल</div>'
-        f'{_evblocks(sw_evs, mid, 'Swing इव्हेंट नाहीत')}'
+        f'{_evblocks(sw_evs, mid, "Swing इव्हेंट नाहीत")}'
         f'</div></details>')
 
     # उघड्या स्थितींची ओळी
