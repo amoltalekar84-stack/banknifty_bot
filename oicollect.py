@@ -211,11 +211,23 @@ def _in_market_hours(n):
 
 
 def collect_all_once(token):
-    """सर्व इंडेक्सचे एक फेरी → [{short, pcr, err}]"""
+    """सर्व इंडेक्सचे एक फेरी → [{short, pcr, err}]
+    🏳️ प्रत्येक सिम्बॉल आपल्या एक्सचेंजच्या (NSE/BSE) खऱ्या स्टेटसनेच —
+    NSE बंद पण BSE सुरू असल्यास (उलटेही) फक्त सुरू असलेलेच जमा होतात
+    (status API 10-मिनिटे कॅश — NSE चे 3 सिम्बॉल = एकच कॉल)."""
     out = []
     for S in C.active_symbols():
         if not S.get("index_key"):
             continue                          # MCX — आत्ता फक्त इंडेक्स
+        st = None
+        try:
+            st = get_market_status(token, S["seg"])
+        except Exception:
+            st = None
+        if st == "NORMAL_CLOSE":              # हाच एक्सचेंज बंद → वगळा
+            out.append({"short": S["short"], "m": None,
+                        "err": S["seg"] + " बंद (सुट्टी/विशेष वेळ)"})
+            continue
         m, err = collect_symbol(S, token)
         out.append({"short": S["short"], "m": m, "err": err})
     return out
@@ -239,14 +251,8 @@ def _loop():
             tdate = store.get_state("token_date")
             if (tok and tdate == n.strftime("%Y-%m-%d")
                     and _in_market_hours(n)):
-                st = None                     # 🏳️ NSE सुट्टी तपासा — fail-open
-                try:
-                    st = get_market_status(tok, "NSE")
-                except Exception:
-                    st = None
-                if st == "NORMAL_CLOSE":      # चेन जुनीच राहील — कॉल वाया
-                    time.sleep(INTERVAL_SEC)
-                    continue
+                # 🏳️ एक्सचेंज-स्टेटस आता collect_all_once मध्येच प्रति-सिम्बॉल
+                # तपासला जातो (NSE बंद पण BSE सुरू — उलटेही) — इथे काही नाही
                 vix = collect_vix(tok)        # 📈 VIX — चेनहून स्वतंत्र, निरागद
                 res = collect_all_once(tok)
                 ok = [r for r in res if r["m"]]

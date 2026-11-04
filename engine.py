@@ -383,37 +383,87 @@ def _maybe_enter(S, date, token, now):
 def _pick_option(S, token, spot, side):
     """NSE/BSE इंडेक्स: ATM (सर्वात जवळचा स्ट्राइक) ऑप्शन निवडा;
     महाग पडल्यास शेजारचा बघा. S = सिम्बॉल config (आपला index_key + lot + भांडवल)
-    खरा लॉट chain मधून आपोआप (NSE ने लॉट बदलला तरी बरोबर)."""
-    chain = get_option_chain(token, S["index_key"])
-    if not chain:
+    खरा लॉट chain मधून आपोआप (NSE ने लॉट बदलला तरी बरोबर).
+    🛡️ चेन-API नाकी/रिकामी आल्यास (BSE SENSEX वर घडते) — सार्वजनिक
+    instruments-फाईल fallback (MCX प्रमाणेच) → SENSEX पूर्ण कार्यरत राहतो."""
+    chain = None
+    chain_err = None
+    try:
+        chain = get_option_chain(token, S["index_key"])
+    except UpstoxError as e:
+        chain_err = str(e)[:120]
+    except Exception as e:
+        chain_err = repr(e)[:120]
+    if chain:
+        qlot = chain_lot(S["index_key"]) or S["lot"]     # खरा लॉट (आपोआप)
+        expiries = sorted({(r.get("expiry_date") or r.get("expiry"))
+                           for r in chain
+                           if (r.get("expiry_date") or r.get("expiry"))})
+        if expiries:
+            near = expiries[0]                  # सर्वात जवळची एक्सपायरी
+            rows = sorted([r for r in chain
+                           if (r.get("expiry_date") or r.get("expiry")) == near],
+                          key=lambda r: abs(float(r.get("strike_price") or 0) - spot))
+            for row in rows[:4]:
+                node = row.get("call_options") if side == "CE" \
+                    else row.get("put_options")
+                if not node:
+                    continue
+                key = node.get("instrument_key")
+                if not key:
+                    continue
+                ltp = (node.get("market_data") or {}).get("ltp")
+                if ltp in (None, 0):
+                    ltp = get_ltp(key, token)
+                if not ltp or float(ltp) <= 0:
+                    continue
+                ltp = float(ltp)
+                if ltp * qlot > paper._capital(S) * 0.90:
+                    continue                     # हा ऑप्शन महाग → पुढचा बघा
+                return {"key": key, "strike": float(row.get("strike_price") or 0),
+                        "expiry": near, "ltp": ltp, "lot": int(qlot)}
+            return None          # चेन होती पण योग्य ऑप्शन नाही — fallback वाया
+
+    # ② fallback — सार्वजनिक instruments फाईल (BSE_INDEX|SENSEX इ.)
+    snap = instruments.index_options_snapshot(S["index_key"])
+    if not snap:
+        if chain_err:
+            raise UpstoxError(
+                f"चेन-API नाकी ({chain_err}) आणि instruments-fallback देखील नाही")
         return None
-    qlot = chain_lot(S["index_key"]) or S["lot"]     # खरा लॉट (आपोआप)
-    expiries = sorted({(r.get("expiry_date") or r.get("expiry"))
-                       for r in chain
-                       if (r.get("expiry_date") or r.get("expiry"))})
-    if not expiries:
-        return None
-    near = expiries[0]                      # सर्वात जवळची एक्सपायरी
-    rows = sorted([r for r in chain
-                   if (r.get("expiry_date") or r.get("expiry")) == near],
-                  key=lambda r: abs(float(r.get("strike_price") or 0) - spot))
-    for row in rows[:4]:
-        node = row.get("call_options") if side == "CE" else row.get("put_options")
-        if not node:
-            continue
-        key = node.get("instrument_key")
+    date = ist_now().strftime("%Y-%m-%d")
+    nk = "optfallback_" + date + "_" + S["key"]
+    if store.get_state(nk) != "1":
+        store.set_state(nk, "1")
+        store.log_event(f"{S['label']}: चेन-API नाकी ({chain_err or 'रिकामी'}) — "
+                        f"instruments-फाईल fallback वापरतो (exp {snap['opt_expiry']}, "
+                        f"स्ट्राइक {len(snap['strikes'])})")
+        try:
+            from telegram_bot import notify
+            notify(f"ℹ️ {S['label']}: option-chain API नाकी आला — "
+                   "instruments-फाईल fallback वापरत आहे (ट्रेडिंग सुरूच राहील).")
+        except Exception:
+            pass
+    qlot = snap.get("lot") or S["lot"]
+    ks = sorted(snap["strikes"].keys(),
+                key=lambda k: abs(float(k) - spot))[:4]
+    for k in ks:
+        key = snap["strikes"][k].get(side)
         if not key:
             continue
-        ltp = (node.get("market_data") or {}).get("ltp")
-        if ltp in (None, 0):
+        try:
             ltp = get_ltp(key, token)
+        except UpstoxError:
+            raise
+        except Exception:
+            ltp = None
         if not ltp or float(ltp) <= 0:
             continue
         ltp = float(ltp)
         if ltp * qlot > paper._capital(S) * 0.90:
             continue                         # हा ऑप्शन महाग → पुढचा बघा
-        return {"key": key, "strike": float(row.get("strike_price") or 0),
-                "expiry": near, "ltp": ltp, "lot": int(qlot)}
+        return {"key": key, "strike": float(k), "expiry": snap["opt_expiry"],
+                "ltp": ltp, "lot": int(qlot)}
     return None
 
 

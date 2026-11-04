@@ -157,6 +157,96 @@ def copper_snapshot(force=False):
     return mcx_snapshot("COPPER", force=force, ts_pattern=r"^COPPER\d")
 
 
+# ------------------------------------------------------------------
+# इंडेक्स ऑप्शन-फॉलबॅक (BSE/SENSEX साठी महत्त्वाचे)
+# चेन-API (/option/contract) कधी कधी फक्त NSE इंडेक्सनाच चालते —
+# BSE_INDEX|SENSEX ला रिकामी यादी दिल्यास बॉट ऑप्शनच निवडू शकत नहीं.
+# त्यावेळी हीच सार्वजनिक instruments फाईल (MCX प्रमाणेच) वापरून
+# जवळची expiry + ATM स्ट्राइक + खरा lot येथून मिळतो.
+# पडताळणी 2026-11-04: BSE_FO SENSEX OPTIDX 3,293 rows, lot 20,
+# weekly expiries, option_type CE/PE स्तंभ.
+# ------------------------------------------------------------------
+INDEX_FILE_NAME = {                       # index_key → (exchange, फाईल-नाव)
+    "BSE_INDEX|SENSEX": ("BSE_FO", "SENSEX"),
+    "BSE_INDEX|BANKEX": ("BSE_FO", "BANKEX"),
+    "BSE_INDEX|SENSEX50": ("BSE_FO", "SENSEX50"),
+    "NSE_INDEX|Nifty 50": ("NSE_FO", "NIFTY"),
+    "NSE_INDEX|Nifty Bank": ("NSE_FO", "BANKNIFTY"),
+    "NSE_INDEX|Nifty Fin Service": ("NSE_FO", "FINNIFTY"),
+}
+
+
+def index_options_snapshot(index_key, force=False):
+    """इंडेक्स ऑप्शन-स्नॅपशॉट (चेन-API नाकी झाल्यास fallback).
+    परत: {"date", "index_key", "opt_expiry", "strikes": {strike: {"CE": key,
+    "PE": key}}, "lot", "tick"} — किंवा None (असमर्थित index/डेटा नाही)."""
+    spec = INDEX_FILE_NAME.get(index_key)
+    if not spec:
+        return None
+    exch, name = spec
+    ckey = "IDX:" + index_key
+    today = _today_str()
+    if not force:
+        snap = _snapshots.get(ckey)
+        if snap and snap.get("date") == today and snap.get("strikes"):
+            return snap
+    os.makedirs(DATA_DIR, exist_ok=True)
+    cp = _cache_path("IDX_" + name, today)
+    if not force and os.path.exists(cp):
+        try:
+            with open(cp, "r", encoding="utf-8") as fh:
+                snap = json.load(fh)
+            if snap.get("date") == today and snap.get("strikes"):
+                _snapshots[ckey] = snap
+                return snap
+        except (ValueError, OSError):
+            pass
+    try:
+        resp = requests.get(INSTR_URL, timeout=40)
+        resp.raise_for_status()
+        raw = gzip.decompress(resp.content)
+        reader = csv.DictReader(io.StringIO(raw.decode("utf-8")))
+        rows = [r for r in reader
+                if r.get("exchange") == exch
+                and r.get("name") == name
+                and (r.get("instrument_type") in ("OPTIDX", "OPTSTK",
+                                                  "CE", "PE"))
+                and (r.get("expiry") or "") >= today]
+        if not rows:
+            raise ValueError(f"{name}: ऑप्शन rows सापडले नाहीत ({exch})")
+        near = min({r["expiry"] for r in rows})
+        strikes, lots = {}, {}
+        for r in rows:
+            if r["expiry"] != near:
+                continue
+            ot = r.get("option_type")          # CE / PE
+            if ot not in ("CE", "PE"):
+                continue
+            node = strikes.setdefault(r.get("strike"), {})
+            node[ot] = r["instrument_key"]
+            try:
+                lots[int(float(r.get("lot_size") or 0))] = \
+                    lots.get(int(float(r.get("lot_size") or 0)), 0) + 1
+            except (TypeError, ValueError):
+                pass
+        # CE व PE दोन्ही असलेलेच स्ट्राइक ठेवा
+        strikes = {k: v for k, v in strikes.items()
+                   if v.get("CE") and v.get("PE")}
+        if not strikes:
+            raise ValueError(f"{name}: CE+PE स्ट्राइक नाहीत")
+        lot = int(max(lots.items(), key=lambda kv: kv[1])[0]) if lots else None
+        snap = {"date": today, "index_key": index_key, "opt_expiry": near,
+                "strikes": strikes, "lot": lot, "tick": 0.05}
+        with open(cp, "w", encoding="utf-8") as fh:
+            json.dump(snap, fh)
+        _snapshots[ckey] = snap
+        return snap
+    except Exception as e:
+        import store
+        store.log_event(f"instruments[{index_key}]: fallback {repr(e)[:200]}")
+        return None
+
+
 def atm_strikes(snap, spot, n=4):
     """स्पॉटच्या सर्वात जवळचे n स्ट्राइक (CE+PE असलेले) → sorted keys (float)."""
     try:
