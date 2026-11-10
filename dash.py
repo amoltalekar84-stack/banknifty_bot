@@ -21,6 +21,11 @@ try:
 except Exception:                                  # module नसेल तरी डॅश चालणार
     swing = None
 
+try:
+    import family
+except Exception:                                  # module नसेल तरी डॅश चालणार
+    family = None
+
 IST = ZoneInfo("Asia/Kolkata")
 _MONO = "'JetBrains Mono','Noto Sans Devanagari',monospace"
 
@@ -41,6 +46,13 @@ SYM_STYLE = {
     "SILVER":    {"c": "#cbd5e1", "icon": "🥈"},
     "CRUDE":     {"c": "#f87171", "icon": "🛢️"},
     "NATGAS":    {"c": "#34d399", "icon": "🔥"},
+}
+
+FAM_STYLE = {
+    "F1": {"c": "#f59e0b", "icon": "🪙"},
+    "F2": {"c": "#22d3ee", "icon": "🎯"},
+    "F3": {"c": "#a78bfa", "icon": "📏"},
+    "F4": {"c": "#34d399", "icon": "⚙️"},
 }
 
 CSS = """
@@ -564,7 +576,7 @@ def _sym_card(S, n, date):
 
 def _timeline(n):
     nodes = [("09:00", "MCX ओपन"), ("09:15", "NSE ओपन + ORB"),
-             ("09:20", "🎯 Swing स्कॅन"),
+             ("09:20", "🎯 Swing स्कॅन"), ("09:35", "👨‍👩‍👧 Family स्कॅन"),
              ("09:45", "एंट्री कार्ड्स"), ("15:05", "BN स्क्वेअर-ऑफ"),
              ("20:30", "EVAL-DAILY अहवाल"), ("23:05", "MCX स्क्वेअर-ऑफ")]
     nowm = n.strftime("%H:%M")
@@ -848,6 +860,120 @@ def _swing(n, date):
 {sw_det}"""
 
 
+def _family(n, date):
+    """👨‍👩‍👧 Low Capital Family विभाग — 4 सदस्य, स्वस्त-स्ट्राइक शोध + निव्वल-नफा गेट"""
+    if family is None or not getattr(family, "ENABLED", False):
+        return ""
+    b = family.eval_block(date)
+    if not b.get("enabled"):
+        return ""
+
+    mid = n.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    try:
+        f_evs = store.events_for(["Family", "FAM-"],
+                                 since_ts=mid - 3 * 86400, limit=200)
+    except Exception:
+        f_evs = []
+    f_ev_n = sum(1 for e in f_evs if e["ts"] >= mid)
+
+    # प्रत्येक सदस्याचे कार्ड
+    cards_html = []
+    for s in b["members"]:
+        st = FAM_STYLE.get(s["key"], {"c": "#818cf8", "icon": "👨‍👩‍👧"})
+        open_row = ""
+        if s["open"]:
+            op = s["open"][0]
+            side = "CE" if "CE" in str(op.get("option_key") or "").upper() else "PE"
+            open_row = ('<div class="opstrip">◉ चालू — {:.0f} {} @ ₹{:.2f} • '
+                        'SL ₹{:.2f} • गेट: {}</div>'.format(
+                            float(op["strike"]), side, float(op["entry"]),
+                            float(op["sl"]), _h.escape(
+                                str(op.get("gate_note") or "")[:52])))
+        halt_row = ('<div class="haltr">🛑 दैनिक तोटा-मर्यादा भितली</div>'
+                    if s["halted"] else "")
+        be_chip = ('<span class="chip good">BE +{}%</span>'
+                   .format(s["avg_be_move"])
+                   if s["avg_be_move"] is not None else "")
+        wr_chip = ('<span class="chip">WR {}%</span>'.format(s["win_rate"])
+                   if s["win_rate"] is not None else "")
+        cards_html.append(
+            '<div class="sym gx" style="--sc:{c}">'
+            '<i class="acc"></i>'
+            '<div class="shead"><div class="sname"><span class="sic">{ic}</span>'
+            '{name}<span class="segc">{seg}</span></div>'
+            '<span class="badge closed">{filter}</span></div>'
+            '<div class="scap">भांडवल <b>{cap}</b> • {style}</div>'
+            '<div class="spnl"><span class="big {cls}">{sign}{today}</span>'
+            '<span class="mtd">MTD {mtd} • {w}W/{l}L • सुरुवातीपासून {tot}</span></div>'
+            '<div class="chips">{be_chip}{wr_chip}'
+            '<span class="chip">गेट ≥₹{netmin} • BE ≤{bemax}%</span></div>'
+            '{open_row}{halt_row}</div>'.format(
+                c=st["c"], ic=st["icon"], name=_h.escape(s["name"]),
+                seg=s["seg"], filter=_h.escape(s["key"]),
+                cap=_inr(s["capital"]), style=_h.escape(s["style"]),
+                cls=_cls(s["today_pnl"]), sign=_sign(s["today_pnl"]),
+                today=_inr(abs(s["today_pnl"])),
+                mtd=_k(s["mtd_pnl"]), w=s["mtd_wins"], l=s["mtd_losses"],
+                tot=_k(s["total_pnl"]), be_chip=be_chip, wr_chip=wr_chip,
+                netmin=int(family.NET_MIN), bemax=int(family.BE_MOVE_MAX),
+                open_row=open_row, halt_row=halt_row))
+
+    best_line = ""
+    if b.get("best_finder_week"):
+        bkey = b["best_finder_week"]
+        bname = bkey
+        for s in b["members"]:
+            if s["key"] == bkey:
+                bname = s["name"]
+        best_line = ('<div class="opstrip" style="margin-top:10px">'
+                     '🏅 Best Strike Finder (MTD निव्वल): <b>{}</b></div>'
+                     .format(_h.escape(str(bname))))
+
+    # आजचे family ट्रेड-ओळी (शेवटचे 6)
+    f_today = store.family_today(date)
+    t_rows = []
+    for t in f_today[-6:]:
+        pnl = t.get("pnl")
+        ic = "◉" if t["status"] == "OPEN" else \
+            ("✅" if (pnl or 0) >= 0 else "❌")
+        ex = " → ₹{:.2f}".format(float(t["exit"])) if t.get("exit") else ""
+        pnl_s = ('<span class="{cls}">{sign}{amt}</span>'.format(
+            cls=_cls(pnl or 0), sign=_sign(pnl or 0),
+            amt=_inr(abs(pnl or 0))) if pnl is not None
+            else '<span class="m">चालू</span>')
+        t_rows.append(
+            '<div class="trow">{ic} [{m}] {_hhmm} • {strike:.0f} {side} '
+            '@ ₹{entry:.2f}{ex} • {reason} • {pnl}</div>'.format(
+                ic=ic, m=_h.escape(str(t["member"])),
+                _hhmm=_hhmm(t.get("opened") or t["date"]),
+                strike=float(t["strike"]), side=_h.escape(str(t["side"])),
+                entry=float(t["entry"]), ex=ex,
+                reason=_h.escape(str(t.get("reason") or ""))[:40] or "—",
+                pnl=pnl_s))
+    f_det = (
+        '<details class="symdet" id="det-FAMILY" data-detid="FAMILY">'
+        '<summary class="detbtn" data-detid="FAMILY">'
+        '<span class="when-shut">📋 सर्व Family ट्रेड-तपशील व इव्हेंट '
+        '<span class="cnt">(आज {ev} इव्हेंट • {tr} ट्रेड)</span></span>'
+        '<span class="when-open">✕ तपशील लपवा</span></summary>'
+        '<div class="detbody">'
+        '<div class="dth">👨‍👩‍👧 आजचे Family ट्रेड्स</div>{rows}'
+        '<div class="dth">📡 Family इव्हेंट-जर्नल</div>{evs}'
+        '</div></details>').format(
+            ev=f_ev_n, tr=len(f_today),
+            rows="".join(t_rows) or
+            '<div class="dtempty">आज Family ट्रेड नाही</div>',
+            evs=_evblocks(f_evs, mid, "Family इव्हेंट नाहीत"))
+
+    return (
+        '<div class="sec"><span class="t">👨‍👩‍👧 Low Capital Family — '
+        'कमी-भांडवल शोध-कुटुंब (स्वस्त स्ट्राइक + निव्वल-नफा गेट • '
+        'एकूण वर्चुअल ₹{:,.0f})</span><span class="ln"></span></div>'
+        '<div class="syms">{}</div>{}{}').format(
+            sum(family._capital(M) for M in family.MEMBERS),
+            "".join(cards_html), best_line, f_det)
+
+
 def build_dashboard():
     n = ist_now()
     date = n.strftime("%Y-%m-%d")
@@ -856,9 +982,10 @@ def build_dashboard():
         _hero(n, date),
         '<div class="sec"><span class="t">📌 आजची स्थिती</span><span class="ln"></span></div>',
         _kpis(n, date),
-        '<div class="sec"><span class="t">🚪 6 दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>',
+        '<div class="sec"><span class="t">🚪 {} दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>'.format(len(C.active_symbols())),
         '<div class="syms">' + "".join(_sym_card(s, n, date) for s in C.active_symbols()) + "</div>",
         _swing(n, date),
+        _family(n, date),
         '<div class="sec"><span class="t">🕒 दिवसाचे वेळापत्रक (डिटरमिनिस्टिक)</span><span class="ln"></span></div>',
         _timeline(n),
         '<div class="sec"><span class="t">📡 लाइव्ह आढावा</span><span class="ln"></span></div>',

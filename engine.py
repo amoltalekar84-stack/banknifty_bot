@@ -63,6 +63,11 @@ def start_engine():
         swing.start_swing()                  # 🎯 वैयक्तिक शेअर्सचे स्विंग (स्वतंत्र थ्रेड)
     except Exception as _e:
         print("Swing मॉड्यूल सुरू होऊ शकला नाही:", repr(_e))
+    try:
+        import family
+        family.start_family()                # 👨‍👩‍👧 कमी-भांडवल शोध-कुटुंब (स्वतंत्र थ्रेड)
+    except Exception as _e:
+        print("Family मॉड्यूल सुरू होऊ शकला नाही:", repr(_e))
     store.init_db()
     # env मध्ये टोकन दिले असेल तर seed करा
     if C.UPSTOX_ACCESS_TOKEN and not store.get_state("upstox_token"):

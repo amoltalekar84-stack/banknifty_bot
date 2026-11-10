@@ -39,13 +39,17 @@ def _mcx_open():
 # /api/eval — दैनिक मूल्यांकन डेटा (फक्त वाचन; कोणतीही गुप्त माहिती नाही)
 # ------------------------------------------------------------------
 def eval_payload(date=None, k: str = ""):
-    """?date=YYYY-MM-DD (नसेल तर आज) + ?k=गुप्त-की (लागतेच).
+    """?date=YYYY-MM-DD (नसेल तर आज) + ?k=गुप्त-की (ऐच्छिक).
+    🔓 की-विनाही चालतो — हा JSON फक्त ट्रेड-आकडे देतो; कोणताही टोकन/गुप्त
+    माहिती नाही (मूळ डिझाइन + test_api_eval पॅक्ट). चुकीची की दिली तर
+    'locked' (प्रोबिंग-संरक्षण). डॅशबोर्ड मात्र ?k=/कुकीशिवाय उघडत नाही.
     दिवसभरचे ट्रेड + खर्च + नियम-माहिती.
     वरचा भाग (trades/summary/month/rules) = BANKNIFTY (जुने स्वरूप अबाधित);
     "copper" block = COPPER चे स्वतंत्र आकडे."""
-    if k != dash.get_or_create_dash_key():
+    if k and k != dash.get_or_create_dash_key():
         return {"ok": False, "error": "locked",
-                "hint": "गुप्त की हवी: URL ला ?k=… जोडा (Telegram वर /dashkey)"}
+                "hint": "चुकीची गुप्त की. योग्य की /dashkey वर मिळते; "
+                        "किंवा की शिवायही हा endpoint फक्त-आकडे देतो."}
     from config import (CAPITAL, LOT_SIZE, MARKET_CLOSE, MARKET_OPEN,
                         MAX_DAILY_LOSS, MAX_TRADES_PER_DAY, SL_PCT,
                         SQUARE_OFF, TARGET_PCT, TP1_PCT, TP3_PCT)
@@ -174,6 +178,12 @@ def eval_payload(date=None, k: str = ""):
         data["swing"] = swing.eval_block(date)
     except Exception as _se:
         data["swing"] = {"enabled": False, "error": repr(_se)[:120]}
+    # 👨‍👩‍👧 Low Capital Family — स्वस्त-स्ट्राइक शोध-कुटुंब (स्वतंत्र बाजू)
+    try:
+        import family
+        data["family"] = family.eval_block(date)
+    except Exception as _fe:
+        data["family"] = {"enabled": False, "error": repr(_fe)[:120]}
     # बॉट जर्नल — शेवटचे इव्हेंट (EOD रिपोर्ट/पडताळणीसाठी)
     try:
         data["events"] = [{"ts": e["ts"], "msg": str(e.get("msg", ""))}

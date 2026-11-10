@@ -90,6 +90,19 @@ def init_db():
             note TEXT);
 
         CREATE INDEX IF NOT EXISTS idx_swscan_date ON swing_scan(date);
+
+        CREATE TABLE IF NOT EXISTS family_trades(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            date TEXT, member TEXT, side TEXT,
+            option_key TEXT, strike REAL, expiry TEXT,
+            qty INTEGER, entry REAL, sl REAL, target REAL,
+            invest REAL, be_move_pct REAL, gate_note TEXT,
+            spot_entry REAL, signal TEXT, opened TEXT,
+            status TEXT, reason TEXT, pnl REAL, charges REAL,
+            exit_price REAL, closed TEXT, last_ltp REAL);
+
+        CREATE INDEX IF NOT EXISTS idx_fam_status ON family_trades(status);
+        CREATE INDEX IF NOT EXISTS idx_fam_member ON family_trades(member, date);
         """)
         # जुन्या DB मध्ये charges column नाही → जोडा (migration)
         try:
@@ -430,3 +443,80 @@ def swing_get_ltp(tid, default=None):
         return float(get_state("swing_ltp_" + str(tid), default))
     except (TypeError, ValueError):
         return default
+
+
+# ---------------- Family (👨‍👩‍👧 Low Capital Family — वेगळा मॉड्यूल) ----------------
+def family_insert(date, member, side, option_key, strike, expiry, qty,
+                  entry, sl, target, invest, be_move_pct, gate_note,
+                  spot_entry, signal, opened=""):
+    """नवीन family ट्रेड (मोटो: स्वस्त प्रीमियम + Net-Profit गेट)"""
+    return _q(
+        """INSERT INTO family_trades(date,member,side,option_key,strike,expiry,
+                                      qty,entry,sl,target,invest,be_move_pct,
+                                      gate_note,spot_entry,signal,opened,status,
+                                      last_ltp)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'OPEN',?)""",
+        (date, member, side, option_key, strike, expiry, qty, entry, sl,
+         target, invest, be_move_pct, str(gate_note)[:200], spot_entry,
+         str(signal)[:40], str(opened)[:8], entry), commit=True)
+
+
+def family_get(tid):
+    row = _q("SELECT * FROM family_trades WHERE id=?", (tid,), fetch="one")
+    return dict(row) if row else None
+
+
+def family_open(member=None):
+    """उघड्या family स्थिती (member='F1' → फक्त तोच; None → सर्व)"""
+    if member:
+        rows = _q("SELECT * FROM family_trades WHERE status='OPEN' AND member=? "
+                  "ORDER BY id", (member,), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM family_trades WHERE status='OPEN' ORDER BY id",
+                  fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def family_set_ltp(tid, ltp):
+    _q("UPDATE family_trades SET last_ltp=? WHERE id=?", (ltp, tid), commit=True)
+
+
+def family_close(tid, exit_price, pnl, charges, reason, closed_str):
+    _q("""UPDATE family_trades SET exit_price=?, pnl=?, charges=?,
+              status='CLOSED', reason=?, closed=? WHERE id=?""",
+       (exit_price, pnl, charges, str(reason)[:200], closed_str, tid),
+       commit=True)
+
+
+def family_today(date, member=None):
+    if member:
+        rows = _q("SELECT * FROM family_trades WHERE date=? AND member=? ORDER BY id",
+                  (date, member), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM family_trades WHERE date=? ORDER BY id",
+                  (date,), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def family_month(prefix, member=None):
+    if member:
+        rows = _q("SELECT * FROM family_trades WHERE date LIKE ? AND member=? ORDER BY id",
+                  (prefix + "%", member), fetch="all") or []
+    else:
+        rows = _q("SELECT * FROM family_trades WHERE date LIKE ? ORDER BY id",
+                  (prefix + "%",), fetch="all") or []
+    return [dict(r) for r in rows]
+
+
+def family_member_total(member):
+    """एका सदस्याचा सुरुवातीपासूनचा निव्वल P&L"""
+    row = _q("SELECT COALESCE(SUM(pnl),0) AS s FROM family_trades "
+             "WHERE status='CLOSED' AND member=?", (member,), fetch="one")
+    return round(row["s"], 2) if row else 0.0
+
+
+def family_total_pnl():
+    """संपूर्ण family चा निव्वल (सर्व सदस्य)"""
+    row = _q("SELECT COALESCE(SUM(pnl),0) AS s FROM family_trades "
+             "WHERE status='CLOSED'", fetch="one")
+    return round(row["s"], 2) if row else 0.0

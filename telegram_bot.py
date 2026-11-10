@@ -43,6 +43,7 @@ HELP = """🤖 All-Rounder AI बॉट — 9 सिम्बॉल्स (BANKN
 /dashkey — डॅशबोर्डचा गुप्त लिंक 🔒 60 सेकंदांत आपोआप पुसला जातो
 /positions — उघड्या पोझिशन्स (सर्व सिम्बॉल्स)
 /swing — 🎯 Swing विभाग: वैयक्तिक शेअर्सचे ऑप्शन-स्विंग (स्कॅन/स्थिती/P&L)
+/family — 👨‍👩‍👧 Low Capital Family: 4 सदस्यांचे स्वस्त-स्ट्राइक शोध + Net-Profit गेट (scoreboard)
 /trades — आजचे सर्व ट्रेड्स
 /eod — आजचा दिवस-समाप्ती अहवाल (🌙 रात्री 23:10 ला आपोआपही येतो)
 /oi [सिम्बॉल] — OI विश्लेषण: PCR, Max Pain, भिंती, IV, ग्रीक्स 🧠 (बाजार वेळेत आपोआप जमा)
@@ -358,6 +359,13 @@ def _eod_text(date=None):
             lines.extend(sl_lines)
     except Exception:
         pass
+    try:                                   # 👨‍👩‍👧 Family विभाग — स्वतंत्र बाजू
+        import family
+        fam_lines = family.eod_lines(date)
+        if fam_lines:
+            lines.extend(fam_lines)
+    except Exception:
+        pass
     try:                                   # 📜 दिवसभरची मुख्य कारणे — जर्नल
         evs = store.last_events(3)
         if evs:
@@ -425,6 +433,23 @@ async def cmd_swing(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         txt = swing.tele_text()
     except Exception as ex:
         txt = "⚠️ Swing मॉड्यूल उपलब्ध नाही: " + repr(ex)[:120]
+    try:
+        await update.effective_message.reply_text(txt, parse_mode="HTML")
+    except Exception:
+        await update.effective_message.reply_text(txt)
+
+
+async def cmd_family(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/family — 👨‍👩‍👧 कमी-भांडवल शोध-कुटुंब: सदस्य scoreboard + उघड्या स्थिती"""
+    e = _guard(update.effective_chat.id)
+    if e:
+        await update.effective_message.reply_text(e)
+        return
+    try:
+        import family
+        txt = family.tele_text()
+    except Exception as ex:
+        txt = "⚠️ Family मॉड्यूल उपलब्ध नाही: " + repr(ex)[:120]
     try:
         await update.effective_message.reply_text(txt, parse_mode="HTML")
     except Exception:
@@ -815,6 +840,7 @@ async def _serve():
     app.add_handler(CommandHandler("dashkey", cmd_dashkey))
     app.add_handler(CommandHandler("positions", cmd_positions))
     app.add_handler(CommandHandler("swing", cmd_swing))
+    app.add_handler(CommandHandler("family", cmd_family))
     app.add_handler(CommandHandler("oi", cmd_oi))
     app.add_handler(CommandHandler("trades", cmd_trades))
     app.add_handler(CommandHandler("eod", cmd_eod))
