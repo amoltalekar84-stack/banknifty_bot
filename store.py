@@ -279,6 +279,24 @@ def total_charges():
     return round(row["s"], 2) if row else 0.0
 
 
+def daily_net_hist(start_date):
+    """start_date (inclusive) पासून आजपर्यंत — प्रत्येक दिवशी सर्व मोड्यूल
+    (मुख्य ट्रेड्स + Swing + Family) चे बंद-ट्रेड निव्वल/खर्च/संख्या.
+    परत {date: [net, charges, n]} — डॅशबोर्डच्या 14-दिवस हिस्ट्री-चार्टसाठी."""
+    out = {}
+    for tbl in ("trades", "swing_trades", "family_trades"):
+        rows = _q("SELECT date AS d, COALESCE(SUM(pnl),0) AS p, "
+                  "COALESCE(SUM(charges),0) AS c, COUNT(*) AS n "
+                  "FROM " + tbl + " WHERE status='CLOSED' AND date>=? "
+                  "GROUP BY date", (start_date,), fetch="all") or []
+        for r in rows:
+            e = out.setdefault(r["d"], [0.0, 0.0, 0])
+            e[0] += (r["p"] or 0)
+            e[1] += (r["c"] or 0)
+            e[2] += (r["n"] or 0)
+    return out
+
+
 # ---------------- OI स्नॅपशॉट्स (PCR / Max Pain / ग्रीक्स) ----------------
 def oi_insert(sym, date, m, chain_blob=None):
     """एक OI स्नॅपशॉट जतन करा (m = oicollect.compute_chain चा dict)"""
