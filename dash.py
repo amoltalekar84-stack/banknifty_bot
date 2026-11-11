@@ -9,10 +9,12 @@ from datetime import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 import calendar
+import csv as _csv
 import html as _h
 import os
 import re as _re
 import secrets
+import tempfile
 import time
 
 import config as C
@@ -231,6 +233,30 @@ background:rgba(148,163,184,.07);border:1px solid rgba(148,163,184,.15);white-sp
 background:rgba(34,197,94,.09);border:1px dashed rgba(34,197,94,.4);color:#86efac;font-family:MONOFONT}
 .dash .haltr{margin-top:10px;padding:7px 11px;border-radius:10px;font-size:11.5px;font-weight:700;
 background:rgba(239,68,68,.13);border:1px solid rgba(239,68,68,.4);color:#fca5a5}
+/* 🛡️ धोका-तापमान • 📉 इक्विटी-कर्व्ह • 📆 वार-विश्लेषण */
+.dash .rk{display:grid;grid-template-columns:168px 1fr 172px 56px;gap:12px;align-items:center;
+padding:7.5px 0;border-bottom:1px solid rgba(148,163,184,.09)}
+.dash .rk:last-child{border-bottom:none}
+.dash .rk .nm{font-size:12px;font-weight:700;color:#f1f5f9;display:flex;align-items:center;gap:7px;
+min-width:0;white-space:nowrap;overflow:hidden}
+.dash .rkbar{height:9px;border-radius:99px;background:rgba(148,163,184,.13);overflow:hidden}
+.dash .rkfill{display:block;height:100%;border-radius:99px;transition:width .35s ease}
+.dash .rkval{font-size:11px;color:#8ea0b9;text-align:right;white-space:nowrap;font-family:MONOFONT}
+.dash .rkval .m{color:#64748b;font-size:10px}
+.dash .rkpct{font-size:13px;font-weight:800;text-align:right;font-family:MONOFONT}
+.dash .rkagg{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.dash .rknote{font-size:11.5px;color:#8ea0b9;line-height:1.75;margin-top:10px;padding-top:9px;
+border-top:1px dashed rgba(148,163,184,.16)}
+.dash .rknote b{color:#f1f5f9}
+.dash .eqsvg{width:100%;height:150px;display:block;border-radius:11px;background:rgba(2,6,17,.35)}
+.dash .eqchips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.dash .wk{display:grid;grid-template-columns:62px 1fr 158px;gap:10px;align-items:center;padding:4.5px 0}
+.dash .wk.dim{opacity:.42}
+.dash .wkl{font-size:11.5px;font-weight:700;color:#94a3b8}
+.dash .wkbar{height:10px;border-radius:99px;background:rgba(148,163,184,.13);overflow:hidden}
+.dash .wkfill{display:block;height:100%;border-radius:99px}
+.dash .wkv{font-size:11.5px;text-align:right;white-space:nowrap;font-family:MONOFONT}
+.dash .wkv .m{font-size:10px}
 .dash .tlwrap{padding:20px 24px 15px;display:flex}
 .dash .node{flex:1;text-align:center;position:relative;min-width:0}
 .dash .node:not(:first-child)::before{content:'';position:absolute;top:6px;left:-50%;width:100%;height:2px;
@@ -322,6 +348,15 @@ padding:10px 26px!important;box-shadow:0 10px 24px -8px rgba(99,102,241,.6)!impo
   .dash .empty{padding:22px 8px!important}
   #refresh-btn{width:100%!important}
   #refresh-btn button{width:100%!important}
+  #csv-btn{width:100%!important;margin-top:8px}
+  #csv-btn button{width:100%!important}
+  .dash .rk{grid-template-columns:96px 1fr 50px;gap:5px 7px;padding:8px 0}
+  .dash .rkbar{grid-column:2;grid-row:1}
+  .dash .rkpct{grid-column:3;grid-row:1;font-size:11.5px}
+  .dash .rkval{grid-column:1/3;grid-row:2;text-align:left;font-size:10px}
+  .dash .wk{grid-template-columns:50px 1fr 120px;gap:8px}
+  .dash .wkv{font-size:10.5px}
+  .dash .eqsvg{height:120px}
   .dash .foot{margin-top:14px}
   .dash .fn{font-size:10.5px;width:100%;text-align:center}
 }
@@ -331,6 +366,8 @@ padding:10px 26px!important;box-shadow:0 10px 24px -8px rgba(99,102,241,.6)!impo
   .dash .kpi .val{font-size:16px}
   .dash table.tbl.has{min-width:620px}
   .dash .kpis{gap:8px}
+  .dash .rk{grid-template-columns:84px 1fr 46px}
+  .dash .wkv{max-width:104px;overflow:hidden;text-overflow:ellipsis}
 }
 /* 📋 प्रति-instrument ट्रेड-तपशील — click-एक्सपॅन्ड (10s-रिफ्रेशनंतरही उघडं राहतं) */
 .dash details.symdet{margin-top:8px;border-radius:12px;
@@ -1550,6 +1587,240 @@ def _timeatlas(date):
             "बुकिंग-तास अभ्यास</div>" + body + "</div>")
 
 
+# ----------------------------------------------------------------
+# 🛡️ धोका-तापमान • 📉 इक्विटी-कर्व्ह • 📆 वार-विश्लेषण (super-mind बॅच)
+# ----------------------------------------------------------------
+def _rk_col(used, halted):
+    """मर्यादा-वापर टक्केवारी → (बार/पेक्ट-रंग) — हिरवा→पिवळा→केशरी→लाल"""
+    if halted or used >= 100:
+        return "#f87171"
+    if used >= 80:
+        return "#fb923c"
+    if used >= 50:
+        return "#fbbf24"
+    return "#34d399"
+
+
+def _riskheat(n, date):
+    """🛡️ धोका-तापमान — प्रत्येक दरवाजाची दैनिक तोटा-मर्यादा किती वापरली गेली?
+    थांब-मर्यादेला किती जवळ आहोत ते एका दृष्टीत (आज NIFTY 140% / COPPER 104%
+    प्रमाणे घटना आधीच दिसायला हव्या होत्या — हा पॅनेल तेच आधी दाखवतो)"""
+    rows_html = []
+    worst_pct, worst_nm = 0.0, ""
+    n_halt, halt_names = 0, []
+    tot_day, tot_lim = 0.0, 0.0
+    for s in C.active_symbols():
+        st = SYM_STYLE.get(s["key"], {"c": "#818cf8", "icon": "📊"})
+        day = store.today_pnl(date, s["key"])
+        lim = float(s.get("max_daily_loss") or 0)
+        halted = store.get_state("halt_" + date + "_" + s["key"]) == "1"
+        used = 0.0 if (day >= 0 or lim <= 0) else min(200.0, -day / lim * 100.0)
+        tot_day += day
+        tot_lim += lim
+        col = _rk_col(used, halted)
+        if halted:
+            n_halt += 1
+            halt_names.append(s["short"])
+        elif used > worst_pct:
+            worst_pct, worst_nm = used, s["short"]
+        fill = ('<i class="rkfill" style="width:' +
+                str(round(min(used, 100.0), 1)) + "%;background:" + col + '"></i>')
+        val = ('<span class="' + _cls(day) + '">' + _sign(day) + _inr(abs(day)) +
+               '</span><span class="m"> / −' + _inr(lim) + "</span>")
+        pct_s = ("{:.0f}%".format(used) if used >= 0.5 else "0%")
+        badge = ('<span class="badge closed" style="margin-left:6px">🛑</span>'
+                 if halted else "")
+        rows_html.append(
+            '<div class="rk"><span class="nm"><span class="symdot" style="background:' +
+            st["c"] + '"></span>' + st["icon"] + " " + _h.escape(s["short"]) + badge +
+            '</span><div class="rkbar">' + fill + '</div><span class="rkval">' + val +
+            '</span><span class="rkpct" style="color:' + col + '">' + pct_s + "</span></div>")
+    if n_halt:
+        verdict = ('🔴 <b>' + str(n_halt) + " दरवाजा हॉल्ट</b> (" +
+                   ", ".join(halt_names) + ") — आजचे नवे ट्रेड बंद")
+    elif worst_pct >= 100:
+        verdict = ('🔴 <b>' + _h.escape(worst_nm) + "</b> मर्यादा ओलांडली — थांब-नियम सक्रिय")
+    elif worst_pct >= 80:
+        verdict = ('🟠 <b>' + _h.escape(worst_nm) + "</b> मर्यादेच्या " +
+                   "{:.0f}%".format(worst_pct) + " वर — पुढचा तोटा हॉल्ट ओलांडेल")
+    elif worst_pct >= 50:
+        verdict = ('🟡 <b>' + _h.escape(worst_nm) + "</b> मर्यादेच्या " +
+                   "{:.0f}%".format(worst_pct) + " वर — लक्ष द्या")
+    else:
+        verdict = "🟢 सर्व दरवाजे निरोगी — आज एकही मर्यादा धोक्यात नाही"
+    agg_used = (0.0 if (tot_day >= 0 or tot_lim <= 0)
+                else min(200.0, -tot_day / tot_lim * 100.0))
+    agg = ('<div class="rkagg"><span class="tchip">एकत्र आजचा निव्वल ' + _spnl(tot_day) +
+           '</span><span class="tchip">एकत्र मर्यादा −' + _inr(tot_lim) +
+           '</span><span class="tchip">एकत्र वापर ' + "{:.0f}%".format(agg_used) +
+           "</span></div>")
+    note = ('<div class="rknote">' + verdict + " • मर्यादा = प्रति-दरवाजा दैनिक तोटा-थांब "
+            "(max_daily_loss) • हॉल्ट झालेला दरवाजा आज नवे ट्रेड घेत नाही — बाकीचे "
+            "दरवाजे चालू राहतात • उजवीकडे: आजचा निव्वल / मर्यादा</div>")
+    return ('<div class="panel gx"><div class="ptitle">🛡️ धोका-तापमान — दैनिक तोटा-मर्यादा '
+            "किती वापरली?</div><div class=\"rkgrid\">" + "".join(rows_html) + "</div>" +
+            agg + note + "</div>")
+
+
+def _equity(date):
+    """📉 इक्विटी-कर्व्ह — या महिन्याचा संचित बंद-ट्रेड निव्वल (सर्व मोड्यूल एकत्र),
+    दिवस-दर-दिवस; शिखर-बिंदू, मॅक्स-ड्रॉडाउन-बिंदू आणि सारांश-चिप्ससह"""
+    ym = date[:7]
+    try:
+        hist = store.daily_net_hist(ym + "-01")
+    except Exception:
+        hist = {}
+    yy, mm = int(ym[:4]), int(ym[5:7])
+    ndays = calendar.monthrange(yy, mm)[1]
+    today_i = min(int(date[8:10]), ndays)
+    days = [ym + "-" + ("%02d" % d) for d in range(1, today_i + 1)]
+    pts, cum = [], 0.0
+    for ds in days:
+        e = hist.get(ds)
+        if e:
+            cum += float(e[0] or 0)
+        pts.append((ds, cum))
+    if not pts or max(abs(v) for _, v in pts) < 0.005:
+        return ('<div class="panel gx"><div class="ptitle">📉 इक्विटी-कर्व्ह — ' +
+                _MAR_M[mm - 1] + " MTD संचित निव्वल</div>"
+                '<div class="dtempty">या महिन्यात अजून बंद-ट्रेड नाहीत — पहिला ट्रेड '
+                "बंद होताच इक्विटी-कर्व्ह उभी राहील</div></div>")
+    vals = [v for _, v in pts]
+    W, H, P = 640, 150, 12
+    lo, hi = min(vals + [0.0]), max(vals + [0.0])
+    span = (hi - lo) or 1.0
+
+    def xy(i, v):
+        x = P + (i * (W - 2 * P) / max(1, len(pts) - 1))
+        y = P + (hi - v) / span * (H - 2 * P)
+        return round(x, 1), round(y, 1)
+
+    pstr = " ".join("{:.1f},{:.1f}".format(*xy(i, v)) for i, v in enumerate(vals))
+    zero_y = xy(0, 0)[1]
+    final = vals[-1]
+    curve_col = ("#34d399" if final > 0.005 else
+                 ("#f87171" if final < -0.005 else "#94a3b8"))
+    peak_i = max(range(len(vals)), key=lambda i: vals[i])
+    run_pk, maxdd, dd_i, dd_pk = 0, 0.0, 0, 0
+    for i, v in enumerate(vals):
+        if v > vals[run_pk]:
+            run_pk = i
+        if vals[run_pk] - v > maxdd:
+            maxdd, dd_i, dd_pk = vals[run_pk] - v, i, run_pk
+    lx, ly = xy(len(pts) - 1, final)
+    px, py = xy(peak_i, vals[peak_i])
+    dx, dy = xy(dd_i, vals[dd_i])
+    svg = (f'<svg class="eqsvg" viewBox="0 0 {W} {H}" preserveAspectRatio="none" '
+           f'role="img" aria-label="MTD इक्विटी-कर्व्ह">'
+           f'<defs><linearGradient id="eqg" x1="0" y1="0" x2="0" y2="1">'
+           f'<stop offset="0" stop-color="{curve_col}" stop-opacity="0.22"/>'
+           f'<stop offset="1" stop-color="{curve_col}" stop-opacity="0.02"/>'
+           f'</linearGradient></defs>'
+           f'<line x1="{P}" y1="{zero_y}" x2="{W - P}" y2="{zero_y}" '
+           f'stroke="#475569" stroke-width="1" stroke-dasharray="4 4"/>'
+           f'<polygon points="{pstr} {W - P},{zero_y} {P},{zero_y}" fill="url(#eqg)"/>'
+           f'<polyline points="{pstr}" fill="none" stroke="{curve_col}" '
+           f'stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>'
+           f'<circle cx="{px}" cy="{py}" r="3.6" fill="#fbbf24">'
+           f"<title>शिखर {_sign(vals[peak_i])}{_inr(abs(vals[peak_i]))}</title></circle>")
+    if maxdd > 0.005:
+        svg += (f'<circle cx="{dx}" cy="{dy}" r="3.6" fill="#f87171">'
+                f"<title>मॅक्स ड्रॉडाउन −{_inr(maxdd)}</title></circle>")
+    svg += (f'<circle cx="{lx}" cy="{ly}" r="4" fill="{curve_col}">'
+            f"<title>आता {_sign(final)}{_inr(abs(final))}</title></circle>")
+    for i in sorted({0, len(pts) // 2, len(pts) - 1}):
+        x, _y = xy(i, lo)
+        svg += (f'<text x="{x}" y="{H - 1}" font-size="9" fill="#64748b" '
+                f'text-anchor="middle">{i + 1}</text>')
+    svg += "</svg>"
+    chips = ['<span class="tchip">📈 आता: <b class="' + _cls(final) + '">' +
+             _sign(final) + _inr(abs(final)) + "</b></span>",
+             '<span class="tchip">⛰ शिखर: <b class="pos">' + _inr(vals[peak_i]) +
+             "</b> (" + str(int(pts[peak_i][0][8:10])) + " " + _MAR_M[mm - 1] + ")</span>"]
+    if maxdd > 0.005:
+        chips.append('<span class="tchip">🕳 मॅक्स ड्रॉडाउन: <b class="neg">−' +
+                     _inr(maxdd) + "</b> (" + str(int(pts[dd_i][0][8:10])) + " " +
+                     _MAR_M[mm - 1] + ")</span>")
+    cur_dd = vals[run_pk] - final
+    if cur_dd > 0.005:
+        chips.append('<span class="tchip">💧 सध्याचा ड्रॉडाउन: <b class="neg">−' +
+                     _inr(cur_dd) + "</b></span>")
+    st_w = st_l = cw = cl = 0
+    for ds in days:
+        e = hist.get(ds)
+        net = float(e[0]) if e else 0.0
+        if net > 0.005:
+            cw, cl = cw + 1, 0
+        elif net < -0.005:
+            cl, cw = cl + 1, 0
+        else:
+            cw = cl = 0
+        st_w = max(st_w, cw)
+        st_l = max(st_l, cl)
+    if st_w >= 2:
+        chips.append('<span class="tchip">🔥 सलग <b class="pos">' + str(st_w) +
+                     "</b> हिरवे दिवस</span>")
+    if st_l >= 2:
+        chips.append('<span class="tchip">❄️ सलग <b class="neg">' + str(st_l) +
+                     "</b> लाल दिवस</span>")
+    return ('<div class="panel gx"><div class="ptitle">📉 इक्विटी-कर्व्ह — ' +
+            _MAR_M[mm - 1] + " MTD संचित बंद-ट्रेड निव्वल (सर्व मोड्यूल एकत्र)</div>" +
+            svg + '<div class="tcall">' + "".join(chips) + "</div>"
+            '<div class="tnote">पिवळा बिंदू = महिन्याचे शिखर • लाल बिंदू = मॅक्स '
+            "ड्रॉडाउन • डॅश-ओळ = ₹0 • hover वर आकडे</div></div>")
+
+
+def _weekday(date):
+    """📆 वार-विश्लेषण — 'कोणत्या वारी पैसा कमावतो?' (सुरुवातीपासून सर्व मोड्यूल;
+    ⏱️ बुकिंग-तास अभ्यासाचा वार-बहिण)"""
+    try:
+        hist = store.daily_net_hist("2000-01-01")
+    except Exception:
+        hist = {}
+    agg = {}
+    for ds, e in hist.items():
+        try:
+            wd = datetime.strptime(ds, "%Y-%m-%d").weekday()
+        except ValueError:
+            continue
+        b = agg.setdefault(wd, [0.0, 0])
+        b[0] += float(e[0] or 0)
+        b[1] += int(e[2] or 0)
+    n_all = sum(v[1] for v in agg.values())
+    if n_all < 1:
+        return ('<div class="panel gx"><div class="ptitle">📆 वार-विश्लेषण — कोणत्या '
+                'वारी पैसा कमावतो?</div><div class="dtempty">अजून बंद-ट्रेड नाहीत — '
+                "ट्रेड सुरू झाल्यावर प्रत्येक वारीची कमाई इथे दिसेल</div></div>")
+    mx = max([abs(v[0]) for v in agg.values() if v[1]] or [1.0])
+    rows = []
+    for wd in range(6):                    # सोम–शनि (रविवारी बाजार बंदच)
+        net, ntr = agg.get(wd, [0.0, 0])
+        w = int(round(abs(net) / mx * 92)) if (ntr and abs(net) >= 0.005) else 0
+        col = ("linear-gradient(90deg,#34d399,#059669)" if net > 0 else
+               "linear-gradient(90deg,#f87171,#b91c1c)")
+        fill = ('<i class="wkfill" style="width:' + str(w) + "%;background:" + col +
+                '"></i>') if w else ""
+        val = (_spnl(net) if abs(net) >= 0.005 else '<span class="m">—</span>')
+        cnt = ('<span class="m"> • ' + str(ntr) + " ट्रेड</span>") if ntr else ""
+        rows.append('<div class="wk' + ("" if ntr else " dim") + '"><span class="wkl">' +
+                    _MAR_W[wd] + 'वार</span><div class="wkbar">' + fill +
+                    '</div><span class="wkv">' + val + cnt + "</span></div>")
+    act = [(wd, v) for wd, v in agg.items() if v[1]]
+    best = max(act, key=lambda x: x[1][0])
+    worst = min(act, key=lambda x: x[1][0])
+    calls = ['🏆 सर्वोत्तम वार: <b>' + _MAR_W[best[0]] + "वार</b> " + _spnl(best[1][0])]
+    if worst[1][0] < -0.005:
+        calls.append('⚠️ काळजीचा वार: <b>' + _MAR_W[worst[0]] + "वार</b> " +
+                     _spnl(worst[1][0]))
+    calls.append("📊 एकूण <b>" + str(n_all) + "</b> बंद-ट्रेड (सुरुवातीपासून)")
+    return ('<div class="panel gx"><div class="ptitle">📆 वार-विश्लेषण — कोणत्या वारी '
+            'पैसा कमावतो?</div><div class="wkgrid">' + "".join(rows) + "</div>"
+            '<div class="tcall">' +
+            "".join('<span class="tchip">' + c + "</span>" for c in calls) + "</div>"
+            '<div class="tnote">दांडा = त्या वारीचे एकूण निव्वल (हिरवा = नफा, लाल = तोटा) '
+            "• सुरुवातीपासून सर्व मोड्यूल एकत्र</div></div>")
+
+
 def _calduo(date):
     """🗓️ कॅलेंडर-हीटमॅप + 🏆 लीडरबोर्ड — महिन्याच्या आढाव्याची जोडी"""
     return ('<div class="duo calduo">' + _calheat(date) + _leaderboard(date) +
@@ -1830,7 +2101,7 @@ def _nav(swing_on, family_on):
     """🔝 स्टिकी जंप-नेव्ह — लांब डॅशबोर्डवर एका-क्लिकमध्ये विभागापर्यंत"""
     links = [("sec-kpi", "📊 स्थिती"), ("sec-ins", "🧠 बुद्धी"),
              ("sec-perf", "🎯 ट्रॅकर"), ("sec-time", "⏱️ वेळ"),
-             ("sec-gates", "🚪 दरवाजे")]
+             ("sec-risk", "🛡️ रिस्क"), ("sec-gates", "🚪 दरवाजे")]
     if swing_on:
         links.append(("sec-swing", "🎯 Swing"))
     if family_on:
@@ -2137,6 +2408,54 @@ def set_theme_by_label(label):
     return None
 
 
+def month_csv(date=None):
+    """📥 MTD CSV एक्सपोर्ट — सर्व मोड्यूलचे (ORB दरवाजे + Swing + Family) या
+    महिन्याचे सर्व ट्रेड्स एका CSV फाइलीत (Excel-मैत्री utf-8-sig) —
+    परत फाइल-पथ (Gradio DownloadButton साठी)"""
+    n = ist_now()
+    ym = (date or n.strftime("%Y-%m-%d"))[:7]
+
+    def opt_side(key):
+        kk = str(key or "").upper()
+        return "CE" if "CE" in kk else ("PE" if "PE" in kk else "")
+
+    heads = ["तारीख", "उघडला", "बंद", "मोड्यूल", "सिम्बॉल", "कॉन्ट्रॅक्ट", "साईड",
+             "Qty", "एंट्री", "एग्झिट", "SL", "निव्वल P&L", "खर्च", "स्थिती", "कारण"]
+    rows = []
+    for t in store.month_trades(ym):
+        S = _sym_of(str(t.get("symbol") or ""))
+        rows.append([t.get("date") or "", t.get("opened") or "", t.get("closed") or "",
+                     "ORB-दरवाजा", S["short"] if S else (t.get("symbol") or ""),
+                     (str(t.get("strike") or "") + " " +
+                      opt_side(t.get("option_key"))).strip(),
+                     t.get("side") or "", t.get("qty") or "", t.get("entry") or "",
+                     t.get("exit") or "", t.get("sl") or "", t.get("pnl") or "",
+                     t.get("charges") or "", t.get("status") or "", t.get("reason") or ""])
+    for t in store.swing_month(ym):
+        rows.append([t.get("date") or "", t.get("opened") or t.get("date") or "",
+                     t.get("closed") or "", "Swing", t.get("symbol") or "",
+                     (str(t.get("strike") or "") + " " +
+                      opt_side(t.get("option_key"))).strip(),
+                     t.get("side") or "", t.get("qty") or "", t.get("entry") or "",
+                     t.get("exit") or "", t.get("sl") or "", t.get("pnl") or "",
+                     t.get("charges") or "", t.get("status") or "", t.get("reason") or ""])
+    for t in store.family_month(ym):
+        rows.append([t.get("date") or "", t.get("opened") or t.get("date") or "",
+                     t.get("closed") or "", "Family", t.get("member") or "",
+                     (str(t.get("strike") or "") + " " +
+                      opt_side(t.get("option_key"))).strip(),
+                     t.get("side") or "", t.get("qty") or "", t.get("entry") or "",
+                     t.get("exit") or "", t.get("sl") or "", t.get("pnl") or "",
+                     t.get("charges") or "", t.get("status") or "", t.get("reason") or ""])
+    rows.sort(key=lambda r: (str(r[0]), str(r[1])))
+    path = os.path.join(tempfile.gettempdir(), "mtd_trades_" + ym + ".csv")
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = _csv.writer(f)
+        w.writerow(heads)
+        w.writerows(rows)
+    return path
+
+
 def build_dashboard(theme=None):
     n = ist_now()
     # 🎨 थीम: स्पष्ट दिलेली > store मधली > midnight (अवैध असल्यास पण midnight)
@@ -2158,6 +2477,8 @@ def build_dashboard(theme=None):
         _perftrack(date),
         '<div class="sec" id="sec-time"><span class="t">⏱️ पैसा कधी कमावतो? — बुकिंग-तास अभ्यास (सुरुवातीपासून)</span><span class="ln"></span></div>',
         _timeatlas(date),
+        '<div class="sec" id="sec-risk"><span class="t">🛡️ धोका-तापमान — थांब-मर्यादेला किती जवळ?</span><span class="ln"></span></div>',
+        _riskheat(n, date),
         '<div class="sec" id="sec-gates"><span class="t">🚪 {} दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>'.format(len(C.active_symbols())),
         '<div class="syms">' + "".join(_sym_card(s, n, date) for s in C.active_symbols()) + "</div>",
         swing_html,
@@ -2170,6 +2491,7 @@ def build_dashboard(theme=None):
         _tradecharts(n, date),
         '<div class="sec" id="sec-hist"><span class="t">📅 महिन्याचा आढावा — कॅलेंडर • लीडरबोर्ड • दैनिक निव्वल • MTD</span><span class="ln"></span></div>',
         _calduo(date),
+        '<div class="duo eqduo">' + _equity(date) + _weekday(date) + "</div>",
         _daily_hist(n, date),
         '<div class="sec" id="sec-tr"><span class="t">💹 आजचे ट्रेड्स</span><span class="ln"></span></div>',
         _table(date),

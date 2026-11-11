@@ -343,9 +343,18 @@ with _make_blocks() as demo:
                            label="🎨 डॅश-थीम — एका क्लिकवर पूर्ण पॅलेट-बदल",
                            elem_id="theme-dd")
     btn = gr.Button("🔄 रिफ्रेश", elem_id="refresh-btn")
+    csv_btn = gr.DownloadButton("📥 MTD CSV — महिन्याचे सर्व ट्रेड्स डाउनलोड",
+                                elem_id="csv-btn")
+
+    def _csv_gate(unlocked):
+        """📥 CSV एक्सपोर्ट — फक्त की-अनलॉक असल्यास फाइल मिळेल;
+        लॉक असल्यास काहीच नाही (डॅश-डेटा प्रमाणेच सुरक्षित)"""
+        return dash.month_csv() if unlocked else None
+
     demo.load(_load_gate, None, [board, unlocked])
     gr.Timer(10).tick(_refresh_gate, unlocked, board)   # दर 10 सेकंदांनी — फक्त अनलॉक असल्यास
     btn.click(_refresh_gate, unlocked, board)
+    csv_btn.click(_csv_gate, unlocked, csv_btn)          # 📥 CSV — अनलॉक-गेटेड
     theme_dd.change(_theme_gate, [theme_dd, unlocked], board)   # थीम-बदल → लगेच नवा पॅलेट
 
 if __name__ == "__main__":
