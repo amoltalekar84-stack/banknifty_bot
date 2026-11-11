@@ -297,6 +297,23 @@ def daily_net_hist(start_date):
     return out
 
 
+def all_closed_pnl_hours(since=None):
+    """सर्व बंद-ट्रेड्सच्या (तिन्ही तक्ते: trades + swing + family)
+    (closed, pnl) जोड्या — ⏱️ वेळ-अभ्यास (बुकिंग-तास) साठी.
+    since='YYYY-MM-DD' दिल्यास त्या दिवसापासूनच. बुकिंग-वेळ = closed स्तंभ."""
+    out = []
+    for tbl in ("trades", "swing_trades", "family_trades"):
+        sql = ("SELECT closed AS c, pnl FROM " + tbl +
+               " WHERE status='CLOSED' AND closed IS NOT NULL AND closed != ''")
+        args = []
+        if since:
+            sql += " AND date >= ?"
+            args.append(since)
+        for r in _q(sql, args, fetch="all") or []:
+            out.append((str(r["c"] or ""), float(r["pnl"] or 0)))
+    return out
+
+
 # ---------------- OI स्नॅपशॉट्स (PCR / Max Pain / ग्रीक्स) ----------------
 def oi_insert(sym, date, m, chain_blob=None):
     """एक OI स्नॅपशॉट जतन करा (m = oicollect.compute_chain चा dict)"""

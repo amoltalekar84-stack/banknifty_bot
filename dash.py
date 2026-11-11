@@ -13,6 +13,7 @@ import html as _h
 import os
 import re as _re
 import secrets
+import time
 
 import config as C
 import store
@@ -371,6 +372,40 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dash .lbr.top1{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.07)}
 .dash .lbr.top1 .rk{font-size:16px}
 .dash .lbfoot{font-size:10.8px;color:#64748b;margin-top:9px}
+/* 🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर */
+.dash table.tbl.perf{min-width:660px}
+.dash table.tbl.perf td,.dash table.tbl.perf th{padding:8.5px 10px}
+.dash .grd{display:inline-block;min-width:30px;text-align:center;font-family:MONOFONT;
+font-weight:800;font-size:11px;padding:2.5px 8px;border-radius:7px}
+/* ⏱️ वेळ-अभ्यास — बुकिंग-तास पट्टी */
+.dash .tstrip{display:flex;gap:4px;align-items:stretch;margin-top:4px;
+overflow-x:auto;padding-bottom:2px;scrollbar-width:thin}
+.dash .thc{flex:0 0 44px;min-width:0;display:flex;flex-direction:column;align-items:center}
+.dash .thw{position:relative;width:100%;height:96px;border-radius:8px;
+background:rgba(148,163,184,.05);border:1px solid rgba(148,163,184,.07);overflow:hidden}
+.dash .thw::before{content:'';position:absolute;left:0;right:0;top:50%;height:1px;
+background:rgba(148,163,184,.20)}
+.dash .thb{position:absolute;left:14%;right:14%;border-radius:4px}
+.dash .thb.up{bottom:50%;background:linear-gradient(180deg,rgba(52,211,153,.95),rgba(52,211,153,.40))}
+.dash .thb.dn{top:50%;background:linear-gradient(180deg,rgba(248,113,113,.40),rgba(248,113,113,.95))}
+.dash .thl{font-family:MONOFONT;font-size:9.3px;font-weight:700;color:#64748b;margin-top:5px}
+.dash .tcall{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.dash .tchip{font-size:11.3px;font-weight:600;padding:5.5px 11px;border-radius:9px;
+border:1px dashed rgba(148,163,184,.25);color:#cbd5e1;background:rgba(148,163,184,.05)}
+.dash .tchip b{font-family:MONOFONT;color:#f1f5f9}
+/* 📈 ट्रेड-लाइव्ह कॅन्डल-चार्ट */
+.dash .tcards{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.dash .tcard{padding:13px 14px 11px;border-radius:16px}
+.dash .tchead{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:9px}
+.dash .tcn{font-size:13.5px;font-weight:800;display:flex;align-items:center;gap:6px}
+.dash .tcn small{color:#64748b;font-weight:600;font-size:10.5px;font-family:MONOFONT}
+.dash .tct{font-family:MONOFONT;font-size:10.5px;color:#64748b;margin-left:auto}
+.dash svg.csvg{width:100%;height:auto;display:block;border-radius:10px;
+background:rgba(2,6,17,.55);border:1px solid rgba(148,163,184,.12)}
+.dash .tcchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.dash .tcno{padding:30px 12px;text-align:center;color:#64748b;font-size:11.8px;line-height:1.5;
+border:1px dashed rgba(148,163,184,.2);border-radius:10px;background:rgba(148,163,184,.03)}
+.dash .tnote{font-size:10.8px;color:#64748b;margin-top:9px;display:flex;gap:12px;flex-wrap:wrap}
 @media(max-width:760px){
   .dash .nav{padding:9px 10px;margin:0 -10px 6px;gap:6px}
   .dash .nav a{font-size:10.5px;padding:5px 9px}
@@ -392,6 +427,13 @@ white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .dash .cd .dn{font-size:7.2px;left:4px;top:2px}
   .dash .lbr{padding:6px 7px;gap:6px}
   .dash .lbr .nt{display:none}
+  .dash table.tbl.perf{min-width:560px}
+  .dash .tcards{grid-template-columns:1fr;gap:10px}
+  .dash .thw{height:78px}
+  .dash .thc{flex:0 0 34px}
+  .dash .thl{font-size:8.2px}
+  .dash .tchip{font-size:10.5px}
+  .dash .tcard{padding:12px 11px 10px}
 }
 """.replace("MONOFONT", _MONO)
 
@@ -1096,20 +1138,29 @@ def _month_rows(date):
     rows = []
     for s in C.active_symbols():
         st = SYM_STYLE.get(s["key"], {"c": "#818cf8", "icon": "📊"})
-        n_, w, l, chg, net = _agg5(store.month_trades(ym, s["key"]))
+        trs = store.month_trades(ym, s["key"])
+        n_, w, l, chg, net = _agg5(trs)
         rows.append({"key": s["key"], "icon": st["icon"], "name": s["short"],
                      "c": st["c"], "n": n_, "w": w, "l": l, "chg": chg,
-                     "net": net})
+                     "net": net,
+                     "pnls": [float(t.get("pnl") or 0) for t in trs
+                              if t.get("status") == "CLOSED"]})
     if swing is not None and getattr(swing, "ENABLED", False):
-        n_, w, l, chg, net = _agg5(store.swing_month(ym))
+        trs = store.swing_month(ym)
+        n_, w, l, chg, net = _agg5(trs)
         rows.append({"key": "SWING", "icon": "🎯", "name": "Swing",
                      "c": "#22d3ee", "n": n_, "w": w, "l": l, "chg": chg,
-                     "net": net})
+                     "net": net,
+                     "pnls": [float(t.get("pnl") or 0) for t in trs
+                              if t.get("status") == "CLOSED"]})
     if family is not None and getattr(family, "ENABLED", False):
-        n_, w, l, chg, net = _agg5(store.family_month(ym))
+        trs = store.family_month(ym)
+        n_, w, l, chg, net = _agg5(trs)
         rows.append({"key": "FAMILY", "icon": "👨‍👩‍👧", "name": "Family",
                      "c": "#f59e0b", "n": n_, "w": w, "l": l, "chg": chg,
-                     "net": net})
+                     "net": net,
+                     "pnls": [float(t.get("pnl") or 0) for t in trs
+                              if t.get("status") == "CLOSED"]})
     return rows
 
 
@@ -1279,21 +1330,434 @@ def _insights(date):
     return '<div class="panel gx ins">' + body + "</div>"
 
 
+# ----------------------------------------------------------------
+# 🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर — निव्वल नाही, गुणवत्ता (PF • अपेक्षा • ग्रेड)
+# ----------------------------------------------------------------
+def _pgrade(gw, gl):
+    """gross नफा/तोटा → (ग्रेड, bg, fg) — A+ सोनी, A हिरवी, B सियान, C पिवळी, D लाल"""
+    if gl <= 0.005:
+        if gw > 0.005:
+            return "A+", "rgba(251,191,36,.16)", "#fbbf24"     # तोटाच नाही
+        return "—", "rgba(148,163,184,.12)", "#94a3b8"
+    pf = gw / gl
+    if pf >= 2:
+        return "A", "rgba(16,185,129,.15)", "#4ade80"
+    if pf >= 1.5:
+        return "B", "rgba(34,211,238,.14)", "#22d3ee"
+    if pf >= 1.0:
+        return "C", "rgba(245,158,11,.16)", "#fbbf24"
+    return "D", "rgba(239,68,68,.16)", "#f87171"
+
+
+def _perftrack(date):
+    """🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर (MTD, बंद-ट्रेड्सवर) — प्रत्येक मोड्यूलची
+    गुणवत्ता: PF • ₹/ट्रेड अपेक्षा • सरासरी नफा/तोटा • सर्वोत्तम/निकृष्ट • ग्रेड"""
+    rows = [r for r in _month_rows(date) if r["n"] > 0]
+    if not rows:
+        return ('<div class="panel gx"><div class="ptitle">🎯 स्ट्रॅटेजी परफॉर्मन्स '
+                "ट्रॅकर — गुणवत्ता अभ्यास</div>"
+                '<div class="dtempty">अजून बंद-ट्रेड नाहीत — पहिला ट्रेड बंद होताच इथे '
+                "प्रत्येक मोड्यूलची गुणवत्ता (PF • ₹/ट्रेड • ग्रेड) दिसेल</div></div>")
+    rows.sort(key=lambda r: r["net"], reverse=True)
+    trs = []
+    for r in rows:
+        pn = [float(p) for p in r["pnls"]]
+        gw = round(sum(p for p in pn if p > 0), 2)
+        gl = round(abs(sum(p for p in pn if p < 0)), 2)
+        g, bg, fg = _pgrade(gw, gl)
+        nw = sum(1 for p in pn if p > 0)
+        nl = sum(1 for p in pn if p < 0)
+        if gw > 0.005:
+            pf = "∞" if gl <= 0.005 else "{:.2f}".format(gw / gl)
+        else:
+            pf = "0"
+        exp = r["net"] / r["n"]
+        aw = (gw / nw) if nw else 0.0
+        al = (gl / nl) if nl else 0.0
+        btr = _spnl(max(pn)) if pn else "—"
+        wtr = _spnl(min(pn)) if pn else "—"
+        aw_s = ('<span class="pos">+' + _inr(aw) + "</span>" if aw > 0.005
+                else '<span class="m">₹0</span>')
+        al_s = ('<span class="neg">−' + _inr(al) + "</span>" if al > 0.005
+                else '<span class="m">₹0</span>')
+        trs.append(
+            '<tr><td><span class="symdot" style="background:' + r["c"] +
+            '"></span>' + r["icon"] + " " + _h.escape(r["name"]) + "</td>"
+            '<td class="m">' + str(r["n"]) + "</td><td>" + _wr_chip(r["w"], r["l"]) +
+            '</td><td class="m">' + pf + "</td><td>" + _spnl(exp) +
+            '</td><td class="m">' + aw_s + " / " + al_s + "</td>"
+            '<td class="m">' + btr + " / " + wtr + "</td>"
+            '<td><span class="grd" style="background:' + bg + ";color:" + fg +
+            '">' + g + "</span></td></tr>")
+    ths = "".join("<th>" + h + "</th>" for h in
+                  ["मोड्यूल", "ट्रेड", "WR", "PF", "₹/ट्रेड",
+                   "सरा. नफा / तोटा", "सर्वोत्तम / निकृष्ट", "ग्रेड"])
+    foot = ('<div class="lbfoot">PF (Profit Factor) = एकूण नफा ÷ एकूण तोटा — '
+            "<b>2.0+</b> उत्कृष्ट • <b>1.5+</b> मजबूत • <b>1.0</b> खाली सावध • "
+            "₹/ट्रेड = प्रत्येक ट्रेडची सरासरी अपेक्षा • MTD बंद-ट्रेड्सवर</div>")
+    return ('<div class="panel gx"><div class="ptitle">🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर — '
+            "गुणवत्ता अभ्यास (MTD)</div>"
+            '<table class="tbl has perf"><thead><tr>' + ths + "</tr></thead><tbody>" +
+            "".join(trs) + "</tbody></table>" + foot + "</div>")
+
+
+# ----------------------------------------------------------------
+# ⏱️ पैसा कधी कमावतो? — बुकिंग-तास अभ्यास (super-mind: सुरुवातीपासूनचा इतिहास)
+# ----------------------------------------------------------------
+def _timeatlas(date):
+    """⏱️ सर्व बंद-ट्रेड्स (तिन्ही मोड्यूल-कुटुंब) चा बुकिंग-तास अभ्यास —
+    कोणत्या तासात नफा आणि कोणत्या तासात तोटा बुक होतो, एका दृष्टीत"""
+    try:
+        rows = store.all_closed_pnl_hours()
+    except Exception:
+        rows = []
+    if len(rows) < 3:
+        return ('<div class="panel gx"><div class="ptitle">⏱️ पैसा कधी कमावतो? — '
+                "बुकिंग-तास अभ्यास</div>"
+                '<div class="dtempty">अजून माहिती जमा होत आहे (आतापर्यंत ' +
+                str(len(rows)) + " बंद-ट्रेड • किमान 3 लागतील) — नंतर इथे कोणत्या "
+                "तासात नफा आणि कोणत्या तासात तोटा बुक होतो ते दिसेल</div></div>")
+    bk = {}
+    for cs, pnl in rows:
+        m = _re.search(r"(\d{1,2}):\d{2}", str(cs or ""))
+        if not m:
+            continue
+        h = int(m.group(1))
+        if h < 4 or h > 23:
+            continue
+        b = bk.setdefault(h, [0.0, 0])
+        b[0] += float(pnl or 0)
+        b[1] += 1
+    if not bk:
+        return ('<div class="panel gx"><div class="ptitle">⏱️ पैसा कधी कमावतो?</div>'
+                '<div class="dtempty">बुकिंग-वेळ वाचता आली नाही</div></div>')
+    hours = sorted(bk)
+    mx = max(abs(bk[h][0]) for h in hours) or 1.0
+    cols = []
+    for h in hours:
+        net, ntr = bk[h]
+        nxt = (h + 1) % 24
+        tip = (f"{h:02d}:00–{nxt:02d}:00 • निव्वल " + _sign(net) + _inr(abs(net)) +
+               " • " + str(ntr) + " ट्रेड")
+        bh = int(round((abs(net) / mx) ** 0.5 * 46))
+        bar = ""
+        if abs(net) >= 0.005 and bh >= 3:
+            bar = ('<i class="thb ' + ("up" if net > 0 else "dn") +
+                   '" style="height:' + str(max(5, bh)) + '%"></i>')
+        cols.append('<div class="thc" title="' + _h.escape(tip) +
+                    '"><div class="thw">' + bar + '</div><div class="thl">' +
+                    f"{h:02d}" + "</div></div>")
+    best = max(hours, key=lambda h: bk[h][0])
+    worst = min(hours, key=lambda h: bk[h][0])
+    nall = sum(bk[h][1] for h in hours)
+    calls = []
+    if bk[best][0] > 0.005:
+        calls.append(f'🏆 सर्वोत्तम बुकिंग-तास <b>{best:02d}:00–{(best + 1) % 24:02d}:00</b> — ' +
+                     _sign(bk[best][0]) + _inr(abs(bk[best][0])) +
+                     " (" + str(bk[best][1]) + " ट्रेड)")
+    if bk[worst][0] < -0.005:
+        calls.append(f'⚠️ काळजीचा तास <b>{worst:02d}:00–{(worst + 1) % 24:02d}:00</b> — ' +
+                     _sign(bk[worst][0]) + _inr(abs(bk[worst][0])) +
+                     " — या तासात सावध एंट्री")
+    calls.append("📊 एकूण <b>" + str(nall) + "</b> बंद-ट्रेड (सुरुवातीपासून) • सर्व "
+                 "मोड्यूल एकत्र")
+    body = ('<div class="tstrip">' + "".join(cols) + "</div>"
+            '<div class="tcall">' +
+            "".join('<span class="tchip">' + c + "</span>" for c in calls) + "</div>"
+            '<div class="tnote">बुकिंग-तास = ट्रेड बंद झाला तो तास • उभा दांडा = त्या '
+            "तासाचे एकूण निव्वल (वर हिरवा = नफा, खाली लाल = तोटा) • hover वर तपशील</div>")
+    return ('<div class="panel gx"><div class="ptitle">⏱️ पैसा कधी कमावतो? — '
+            "बुकिंग-तास अभ्यास</div>" + body + "</div>")
+
+
 def _calduo(date):
     """🗓️ कॅलेंडर-हीटमॅप + 🏆 लीडरबोर्ड — महिन्याच्या आढाव्याची जोडी"""
     return ('<div class="duo calduo">' + _calheat(date) + _leaderboard(date) +
             "</div>")
 
 
+# ----------------------------------------------------------------
+# 📈 ट्रेड-लाइव्ह कॅन्डल-चार्ट — ट्रेड झालेल्या प्रत्येक instrument चे आजचे
+# कॅन्डल (Upstox 1-मिनिट) + एंट्री/SL/TP ओळी + एग्झिट-बिंदू. 55 से कॅशमुळे
+# API वर ताण नाही (प्रति instrument एक मिनिटाला जास्तीत जास्त 1 विचारणा).
+# ----------------------------------------------------------------
+_CCH = {}                                  # option_key -> (epoch, candles|[])
+
+
+def _hhmm_min(s):
+    """कोणतीही वेळ-स्ट्रिंग → दिवसाच्या मिनिटांत (नाही तर None)"""
+    m = _re.search(r"(\d{1,2}):(\d{2})", str(s or ""))
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def _candles_cached(okey, date):
+    """1-मिनिट कॅन्डल — कॅश 55 से (ताजे) / 20 से (अपयश); टोकन नसेल None"""
+    if not okey:
+        return None
+    now = time.time()
+    e = _CCH.get(okey)
+    if e and (now - e[0]) < (55 if e[1] else 20):
+        return e[1]
+    tok = store.get_state("upstox_token") or ""
+    if not tok:
+        return None
+    try:
+        import upstox_api as U
+        cs = U.get_today_candles(tok, okey, date) or []
+    except Exception:
+        cs = []
+    _CCH[okey] = (now, cs)
+    return cs
+
+
+def _aggc(cs, step):
+    """1-मिनिट → step-मिनिट बंडल [(min, o, h, l, c)]"""
+    b = {}
+    for c in cs:
+        m = _hhmm_min(c[0])
+        if m is None:
+            continue
+        k = (m // step) * step
+        o, h, l, cl = float(c[1]), float(c[2]), float(c[3]), float(c[4])
+        e = b.get(k)
+        if e is None:
+            b[k] = [o, h, l, cl]
+        else:
+            if h > e[1]:
+                e[1] = h
+            if l < e[2]:
+                e[2] = l
+            e[3] = cl
+    return [(k, v[0], v[1], v[2], v[3]) for k, v in sorted(b.items())]
+
+
+def _svg_candles(ac, tr, o0, o1):
+    """बंडल-कॅन्डल्स + E/SL/TP ओळी + एग्झिट-बिंदू → SVG (डेटा नसेल None)"""
+    if not ac or len(ac) < 2:
+        return None
+    W, H = 760.0, 240.0
+    pl, pr, pt, pb = 10.0, 60.0, 16.0, 27.0
+    entry = float(tr.get("entry") or 0)
+    lo = min(c[3] for c in ac)
+    hi = max(c[2] for c in ac)
+    if hi <= lo:
+        hi = lo + max(0.5, abs(lo) * 0.002)
+    sp = (hi - lo) * 0.08
+    lo, hi = lo - sp, hi + sp
+    lo, hi = min(lo, entry), max(hi, entry)
+    sl = float(tr.get("sl") or 0)
+    tp = float(tr.get("target") or 0)
+    rng = hi - lo
+    for v in (sl, tp):
+        if v > 0 and (lo - rng * 0.6) <= v <= (hi + rng * 0.6):
+            lo, hi = min(lo, v), max(hi, v)
+
+    def Y(p):
+        p = min(max(p, lo), hi)
+        return round(pt + (hi - p) / (hi - lo) * (H - pt - pb), 1)
+
+    nb = len(ac)
+    slot = (W - pl - pr) / nb
+    cw = min(13.0, max(2.2, slot * 0.62))
+    parts = []
+    for gi in range(4):                     # क्षितिज-रेषा + किंमत-लेबल
+        p = lo + (hi - lo) * gi / 3.0
+        y = Y(p)
+        plab = "{:.1f}".format(p) if abs(p) < 1000 else "{:.0f}".format(p)
+        parts.append(f'<line x1="{pl}" y1="{y}" x2="{W - pr}" y2="{y}" '
+                     f'stroke="rgba(148,163,184,.10)" stroke-width="1"/>')
+        parts.append(f'<text x="{W - pr + 5}" y="{round(y + 3.2, 1)}" font-size="9.5" '
+                     f'fill="#64748b" font-family="monospace">{plab}</text>')
+    for i, (m, o, h, l, c) in enumerate(ac):   # कॅन्डल (hover-टिपसह)
+        x = round(pl + i * slot + slot / 2 - cw / 2, 1)
+        xc = round(x + cw / 2, 1)
+        col = "#34d399" if c >= o else "#f87171"
+        tip = (f"{m // 60:02d}:{m % 60:02d} • O {o:.1f} H {h:.1f} "
+               f"L {l:.1f} C {c:.1f}")
+        yo, yc, yh, yl = Y(o), Y(c), Y(h), Y(l)
+        parts.append(f'<g><title>{_h.escape(tip)}</title>'
+                     f'<line x1="{xc}" y1="{yh}" x2="{xc}" y2="{yl}" '
+                     f'stroke="{col}" stroke-width="1"/>'
+                     f'<rect x="{x}" y="{min(yo, yc)}" width="{round(cw, 1)}" '
+                     f'height="{max(1.4, abs(yo - yc))}" fill="{col}" rx="1"/></g>')
+
+    def hline(p, col, lab, right):
+        """क्षैतिज सूचक-रेषा (एंट्री/SL/TP) — लेबलसह"""
+        if p <= 0:
+            return ""
+        y = Y(p)
+        if right:
+            tx, anch = W - pr - 5, "end"
+        else:
+            tx, anch = pl + 5, "start"
+        return (f'<line x1="{pl}" y1="{y}" x2="{W - pr}" y2="{y}" stroke="{col}" '
+                f'stroke-width="1.2" stroke-dasharray="5 4" opacity=".85"/>'
+                f'<text x="{round(tx, 1)}" y="{round(y - 4, 1)}" font-size="10" '
+                f'font-weight="700" fill="{col}" text-anchor="{anch}" '
+                f'style="paint-order:stroke" stroke="#04060c" '
+                f'stroke-width="3">{lab}</text>')
+
+    parts.append(hline(entry, "#38bdf8", "E {:g}".format(entry), False))
+    parts.append(hline(sl, "#f87171", "SL {:g}".format(sl), True))
+    parts.append(hline(tp, "#34d399", "TP {:g}".format(tp), True))
+    ex = tr.get("exit")
+    if tr.get("status") != "OPEN" and ex:   # एग्झिट-बिंदू
+        em = min(max(_hhmm_min(tr.get("closed")) or o0, o0), o1)
+        xe = round(pl + (em - o0) / max(1, o1 - o0) * (W - pl - pr), 1)
+        ye = Y(float(ex))
+        parts.append(f'<circle cx="{xe}" cy="{ye}" r="4" fill="#e2e8f0" '
+                     f'stroke="#04060c" stroke-width="1.5">'
+                     f'<title>एग्झिट {_hhmm(tr.get("closed"))} • '
+                     f'₹{float(ex):.2f}</title></circle>')
+    for f_ in (0.0, 1 / 3.0, 2 / 3.0, 1.0):  # वेळ-लेबल
+        m = int(o0 + (o1 - o0) * f_)
+        tx = pl + (W - pl - pr) * f_
+        anch = "middle"
+        if f_ == 0.0:
+            anch = "start"
+        elif f_ == 1.0:
+            anch = "end"
+        parts.append(f'<text x="{round(tx, 1)}" y="{H - 9}" font-size="9.5" '
+                     f'fill="#64748b" text-anchor="{anch}" '
+                     f'font-family="monospace">{m // 60:02d}:{m % 60:02d}</text>')
+    return ('<svg class="csvg" viewBox="0 0 760 240" '
+            'preserveAspectRatio="xMidYMid meet" '
+            'xmlns="http://www.w3.org/2000/svg">' + "".join(parts) + "</svg>")
+
+
+def _tcard(tr, n, date):
+    """एका ट्रेडचे चार्ट-कार्ड — शीर्षक + SVG + E/SL/TP/LTP/निव्वल चिप्स"""
+    is_mcx = str(tr["okey"] or "").upper().startswith("MCX")
+    mo, mc = (540, 1410) if is_mcx else (555, 930)
+    om = _hhmm_min(tr.get("opened")) or (545 if is_mcx else 560)
+    if tr["status"] == "OPEN":
+        em = n.hour * 60 + n.minute
+    else:
+        em = _hhmm_min(tr.get("closed")) or om + 30
+    o0 = max(mo, om - 25)
+    o1 = min(mc, max(em + 25, o0 + 20))
+    cs = _candles_cached(tr["okey"], date)
+    svg = None
+    ltp = None
+    if cs:
+        step = 1 if (o1 - o0) <= 90 else (5 if (o1 - o0) <= 480 else 15)
+        ac = [c for c in _aggc(cs, step) if o0 <= c[0] <= o1]
+        svg = _svg_candles(ac, tr, o0, o1)
+        if ac:
+            ltp = ac[-1][4]
+    cp = "CE" if "CE" in str(tr["okey"] or "").upper() else \
+         ("PE" if "PE" in str(tr["okey"] or "").upper() else "")
+    nm = (tr["icon"] + ' <span style="color:' + tr["c"] + '">' +
+          _h.escape(tr["sym"]) + "</span> <small>" +
+          f'{float(tr["strike"] or 0):,.0f} {cp}</small>')
+    sideb = ('<span class="sbu">BUY</span>' if tr["side"] == "BUY"
+             else '<span class="sbd">SELL</span>')
+    statb = ('<span class="badge open">◉ चालू</span>' if tr["status"] == "OPEN"
+             else '<span class="badge closed">पूर्ण</span>')
+    tend = "आता" if tr["status"] == "OPEN" else _hhmm(tr.get("closed"))
+    tms = _hhmm(tr.get("opened")) + " → " + tend
+    if svg:
+        body = svg
+    elif not (store.get_state("upstox_token") or ""):
+        body = ('<div class="tcno">🔇 Upstox टोकन नाही — चार्टसाठी टोकन लागते '
+                "(Telegram वर /code). बाकी आकडे बरोबर आहेत</div>")
+    else:
+        body = ('<div class="tcno">🔇 कॅन्डल डेटा आला नाही (API) — पुढील '
+                "रिफ्रेशमध्ये पुन्हा प्रयत्न होईल</div>")
+    chips = ['<span class="chip">E ₹{:,.2f}</span>'.format(float(tr["entry"] or 0))]
+    if tr.get("sl"):
+        chips.append('<span class="chip hot">SL ₹{:,.2f}</span>'.format(float(tr["sl"])))
+    if tr.get("target"):
+        chips.append('<span class="chip good">TP ₹{:,.2f}</span>'.format(
+            float(tr["target"])))
+    if ltp:
+        chips.append('<span class="chip">LTP ₹{:,.2f}</span>'.format(float(ltp)))
+    if tr["status"] != "OPEN" and tr.get("pnl") is not None:
+        chips.append('<span class="chip">निव्वल ' + _spnl(float(tr["pnl"])) +
+                     "</span>")
+    if tr.get("reason"):
+        chips.append('<span class="chip">' + _h.escape(str(tr["reason"]))[:42] +
+                     "</span>")
+    return (f'<div class="tcard gx"><div class="tchead"><span class="tcn">{nm}</span>'
+            f'{sideb}{statb}<span class="tct">{tms}</span></div>{body}'
+            f'<div class="tcchips">{"".join(chips)}</div></div>')
+
+
+def _tradecharts(n, date):
+    """📈 आज ट्रेड झालेल्या प्रत्येक instrument चे लाइव्ह कॅन्डल-चार्ट-कार्ड
+    (चालू आधी, मग शेवटचे बंद — जास्तीत जास्त 6)"""
+    tds = []
+    for t in store.trades_today(date):
+        S = _sym_of(t.get("symbol") or "BANKNIFTY")
+        st = SYM_STYLE.get(t.get("symbol") or "BANKNIFTY",
+                           {"c": "#818cf8", "icon": "📊"})
+        tds.append({"okey": t.get("option_key"),
+                    "sym": S["short"] if S else (t.get("symbol") or "?"),
+                    "icon": st["icon"], "c": st["c"],
+                    "strike": t.get("strike") or 0, "side": t.get("side"),
+                    "entry": t.get("entry"), "sl": t.get("sl"),
+                    "target": t.get("target"), "opened": t.get("opened"),
+                    "closed": t.get("closed"), "status": t.get("status"),
+                    "exit": t.get("exit"), "pnl": t.get("pnl"),
+                    "reason": t.get("reason")})
+    if swing is not None:
+        for t in store.swing_today(date):
+            tds.append({"okey": t.get("option_key"),
+                        "sym": str(t.get("symbol") or "?"), "icon": "🎯",
+                        "c": "#22d3ee", "strike": t.get("strike") or 0,
+                        "side": t.get("side"), "entry": t.get("entry"),
+                        "sl": t.get("sl"), "target": None,
+                        "opened": t.get("opened") or "09:20",
+                        "closed": t.get("closed"), "status": t.get("status"),
+                        "exit": t.get("exit_price"), "pnl": t.get("pnl"),
+                        "reason": t.get("reason")})
+    if family is not None:
+        for t in store.family_today(date):
+            fs = FAM_STYLE.get(t.get("member"), {"c": "#f59e0b", "icon": "👨‍👩‍👧"})
+            tds.append({"okey": t.get("option_key"),
+                        "sym": "Family " + str(t.get("member") or ""),
+                        "icon": fs["icon"], "c": fs["c"],
+                        "strike": t.get("strike") or 0, "side": t.get("side"),
+                        "entry": t.get("entry"), "sl": t.get("sl"),
+                        "target": t.get("target"),
+                        "opened": t.get("opened") or "09:35",
+                        "closed": t.get("closed"), "status": t.get("status"),
+                        "exit": t.get("exit_price"), "pnl": t.get("pnl"),
+                        "reason": t.get("reason")})
+    if not tds:
+        return ('<div class="panel gx"><div class="ptitle">📈 ट्रेड-लाइव्ह '
+                "कॅन्डल-चार्ट</div>"
+                '<div class="empty"><div class="e1">🌙</div>आज अजून ट्रेड नाही<br>'
+                "<small>पहिलाच ट्रेड झाल्यावर त्या instrument चा लाइव्ह कॅन्डल-चार्ट "
+                "इथे येईल — एंट्री • SL • टार्गेट ओळींसह, दर 10 सेकंदांनी ताजा</small>"
+                "</div></div>")
+    opn = [t for t in tds if t["status"] == "OPEN"]
+    clz = sorted([t for t in tds if t["status"] != "OPEN"],
+                 key=lambda t: str(t.get("closed") or ""), reverse=True)
+    shown = (opn + clz)[:6]
+    extra = len(tds) - len(shown)
+    cards = "".join(_tcard(t, n, date) for t in shown)
+    note = ('<div class="tnote">🔵 E = एंट्री • लाल SL • हिरवा TP • ⚪ एग्झिट-बिंदू • '
+            "कॅन्डलवर hover = O/H/L/C • 1-मिनिट डेटा 5/15-मिनिटांत बंडल • "
+            "55 सेकंद कॅश — दर 10 सेकंदांनी ताजे</div>")
+    if extra > 0:
+        note = ('<div class="tnote">… आणि आजचे आधीचे ' + str(extra) +
+                " ट्रेड — सर्व 💹 ट्रेड्स टेबलमध्ये</div>" + note)
+    return '<div class="tcards">' + cards + "</div>" + note
+
+
 def _nav(swing_on, family_on):
     """🔝 स्टिकी जंप-नेव्ह — लांब डॅशबोर्डवर एका-क्लिकमध्ये विभागापर्यंत"""
-    links = [("sec-kpi", "📊 स्थिती"), ("sec-ins", "🧠 बुद्धी"), ("sec-gates", "🚪 दरवाजे")]
+    links = [("sec-kpi", "📊 स्थिती"), ("sec-ins", "🧠 बुद्धी"),
+             ("sec-perf", "🎯 ट्रॅकर"), ("sec-time", "⏱️ वेळ"),
+             ("sec-gates", "🚪 दरवाजे")]
     if swing_on:
         links.append(("sec-swing", "🎯 Swing"))
     if family_on:
         links.append(("sec-family", "👨‍👩‍👧 Family"))
     links += [("sec-tl", "🕒 वेळापत्रक"), ("sec-ov", "📡 आढावा"),
-              ("sec-hist", "📅 MTD"), ("sec-tr", "💹 ट्रेड्स")]
+              ("sec-chart", "📈 चार्ट"), ("sec-hist", "📅 MTD"),
+              ("sec-tr", "💹 ट्रेड्स")]
     items = "".join('<a href="#' + a + '">' + t + "</a>" for a, t in links)
     return '<div class="nav">' + items + "</div>"
 
@@ -1551,6 +2015,10 @@ def build_dashboard():
         _kpis(n, date),
         '<div class="sec" id="sec-ins"><span class="t">🧠 बुद्धीचा डब्बा — डेटामधून आपोआप तयार होणारे विचार</span><span class="ln"></span></div>',
         _insights(date),
+        '<div class="sec" id="sec-perf"><span class="t">🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर — निव्वल नाही, गुणवत्ता (PF • अपेक्षा • ग्रेड)</span><span class="ln"></span></div>',
+        _perftrack(date),
+        '<div class="sec" id="sec-time"><span class="t">⏱️ पैसा कधी कमावतो? — बुकिंग-तास अभ्यास (सुरुवातीपासून)</span><span class="ln"></span></div>',
+        _timeatlas(date),
         '<div class="sec" id="sec-gates"><span class="t">🚪 {} दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>'.format(len(C.active_symbols())),
         '<div class="syms">' + "".join(_sym_card(s, n, date) for s in C.active_symbols()) + "</div>",
         swing_html,
@@ -1559,6 +2027,8 @@ def build_dashboard():
         _timeline(n),
         '<div class="sec" id="sec-ov"><span class="t">📡 लाइव्ह आढावा</span><span class="ln"></span></div>',
         _overview(n, date),
+        '<div class="sec" id="sec-chart"><span class="t">📈 ट्रेड-लाइव्ह कॅन्डल-चार्ट — ट्रेड झालेल्या प्रत्येक instrument चे</span><span class="ln"></span></div>',
+        _tradecharts(n, date),
         '<div class="sec" id="sec-hist"><span class="t">📅 महिन्याचा आढावा — कॅलेंडर • लीडरबोर्ड • दैनिक निव्वल • MTD</span><span class="ln"></span></div>',
         _calduo(date),
         _daily_hist(n, date),
