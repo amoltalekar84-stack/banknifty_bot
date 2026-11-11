@@ -157,7 +157,10 @@ def gate_check(entry, qty, mcx=False):
 # ------------------------------------------------------------------
 def side_rows(chain, side):
     """जवळच्या expiry-च्या चेनमधून या बाजूच्या ऑप्शन-ओळी → क्रमवार स्ट्राइक.
-    प्रत्येकी: {strike, ltp, delta, key} — डेटा नसलेल्या वगळल्या."""
+    प्रत्येकी: {strike, ltp, delta, key, expiry} — डेटा नसलेल्या वगळल्या.
+    🐛 दुरुस्ती: expiry आता प्रत्येक ओळीबरोबर येते (आधी गाळलं होतं,
+    त्यामुळे _member_enter मध्ये KeyError('expiry') होऊन F1–F3 आज
+    संपूर्ण दिवस एंट्री करू शकले नव्हते)."""
     out = []
     for r in chain or []:
         node = r.get("call_options") if side == "CE" else r.get("put_options")
@@ -182,7 +185,8 @@ def side_rows(chain, side):
             strike = float(r.get("strike_price") or 0)
         except (TypeError, ValueError):
             continue
-        out.append({"strike": strike, "ltp": ltp, "delta": delta, "key": key})
+        out.append({"strike": strike, "ltp": ltp, "delta": delta, "key": key,
+                    "expiry": str(r.get("expiry") or r.get("expiry_date") or "")})
     out.sort(key=lambda x: x["strike"])
     return out
 
@@ -195,7 +199,8 @@ def _opt_of(M, row, qty):
     if entry * qty > _capital(M) * 0.90:
         return None
     return {"key": row["key"], "strike": float(row["strike"]),
-            "ltp": float(row["ltp"]), "lot": int(qty)}
+            "ltp": float(row["ltp"]), "lot": int(qty),
+            "expiry": row.get("expiry") or ""}
 
 
 def pick_cheapest(M, rows, qty):
@@ -305,14 +310,15 @@ def _member_enter(M, sig, spot, opt, now):
     sl = round(entry * (1 - SL_PCT / 100.0), 2)
     target = round(entry * (1 + TARGET_PCT / 100.0), 2)
     gate_note = note + " • प्रीमियम ₹{:.2f}".format(entry)
+    exp = opt.get("expiry") or ""          # 🛡️ KeyError-प्रतिकारक
     tid = store.family_insert(
-        date, M["key"], sig["side"], opt["key"], opt["strike"], opt["expiry"],
+        date, M["key"], sig["side"], opt["key"], opt["strike"], exp,
         qty, entry, sl, target, round(entry * qty, 2), be_pct, gate_note,
         round(float(spot), 2), sig.get("side", ""),
         now.strftime("%H:%M:%S"))
     store.log_event("👨‍👩‍👧 Family ENTRY {} {} {:.0f}{} exp={} qty={} @₹{:.2f} "
                     "| {}".format(M["key"], sig["side"], opt["strike"],
-                                  sig["side"], opt["expiry"], qty, entry,
+                                  sig["side"], exp, qty, entry,
                                   note))
     chg = _charges_for(entry, target, qty, M["seg"] == "MCX")
     sl_cost = _charges_for(entry, sl, qty, M["seg"] == "MCX")
@@ -320,14 +326,14 @@ def _member_enter(M, sig, spot, opt, now):
     notify(
         "👨‍👩‍👧 <b>FAMILY ENTRY — {}</b> (PAPER)\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
-        "• {} {:.0f} {} — expiry {}\n"
+        "• {:.0f} {} — expiry {}\n"
         "• प्रीमियम <b>₹{:.2f}</b> × {} = ₹{:,.0f} गुंतवणूक\n"
         "• स्पॉट ₹{:,.2f} • ORB {} सिग्नल (मुख्य इंजिनप्रमाणेच)\n"
         "• 🛑 SL ₹{:.2f} (−{:.0f}%) → कमाल तोटा −₹{:,.0f}\n"
         "• 🎯 टार्गेट ₹{:.2f} (+{:.0f}%) → निव्वल +₹{:,.0f} (खर्च ₹{:,.0f} वजा)\n"
         "• 🔓 breakeven +{:.1f}% — त्याआधी एग्झिट = तोटा\n"
         "• 💵 स्लीव्ह ₹{:,.0f} ({} पद्धत)".format(
-            M["name"], opt["strike"], sig["side"], opt["expiry"], entry, qty,
+            M["name"], opt["strike"], sig["side"], exp, entry, qty,
             entry * qty, spot, sig["side"], sl, SL_PCT,
             round((entry - sl) * qty + sl_cost),
             target, TARGET_PCT, net_t, chg, be_pct, _capital(M), M["style"]),
