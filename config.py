@@ -130,6 +130,7 @@ COPPER = {
     "market_open": CU_MARKET_OPEN, "market_close": CU_MARKET_CLOSE,
     "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT, "tp3_pct": TP3_PCT,
     "ladder": False,          # 1 lot (2500) — भागाकार बुकिंग शक्य नाही
+    "brk_buffer_pct": _f("CU_BRK_BUFFER_PCT", 0.0),  # breakout-बफर % (नकली-ब्रेक चाळणी)
     "mcx": True,
     "commodity": "COPPER",                  # Upstox फाईलमधले खरे नाव
     "ts_pattern": r"^COPPER\d",             # फक्त main series
@@ -162,6 +163,7 @@ def _mcx_symbol(key, label, short, commodity, ts_pattern, capital,
         "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT,
         "tp3_pct": TP3_PCT,
         "ladder": False,          # 1 लॉट — भागाकार बुकिंग शक्य नाही
+        "brk_buffer_pct": 0.0,    # breakout-बफर % (सुरुवातीला बंद — बॅकटेस्टनंतर चालू)
         "mcx": True,
         "commodity": commodity, "ts_pattern": ts_pattern,
         "trade_lot": trade_lot,
@@ -212,6 +214,7 @@ BANKNIFTY = {
     "market_open": MARKET_OPEN, "market_close": MARKET_CLOSE,
     "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT, "tp3_pct": TP3_PCT,
     "ladder": True,           # लॉट 30 → 10+10+10 भागाकार
+    "brk_buffer_pct": _f("BRK_BUFFER_BANKNIFTY", 0.0),  # breakout-बफर %
     "mcx": False,
     "min_candles": 16,
     "summary_at": "15:20",
@@ -243,6 +246,7 @@ def _index_symbol(key, label, short, seg, index_key, lot,
         "sl_pct": SL_PCT, "tp1_pct": TP1_PCT, "tp2_pct": TARGET_PCT,
         "tp3_pct": TP3_PCT,
         "ladder": True,           # TP लॅडर — thirds() शिल्लक स्वयंहाताळते
+        "brk_buffer_pct": _f("BRK_BUFFER_" + key, 0.0),  # breakout-बफर %
         "mcx": False,
         "min_candles": 16,
         "summary_at": summary_at,

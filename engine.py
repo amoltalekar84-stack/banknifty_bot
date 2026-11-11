@@ -27,6 +27,7 @@ import cards
 import config as C
 import instruments
 import paper
+import quality
 import risk
 import store
 from config import ist_now
@@ -265,7 +266,7 @@ def _tick_symbol(S, token, now):
         _monitor(S, pos, token, now)
         return
 
-    ok, _why = risk.can_enter(date, S)
+    ok, _why = risk.can_enter(date, S, now)
     if not ok:
         return
     _maybe_enter(S, date, token, now)
@@ -337,7 +338,8 @@ def _maybe_enter(S, date, token, now):
         prev_close = None          # गॅप फिल्टर वगळा
 
     sig = analyze(cs, spot, now, prev_close,
-                  orb_start=S["orb_start"], orb_end=S["orb_end"])
+                  orb_start=S["orb_start"], orb_end=S["orb_end"],
+                  brk_buffer_pct=S.get("brk_buffer_pct", 0.0))
     if not sig:
         return
 
@@ -346,6 +348,12 @@ def _maybe_enter(S, date, token, now):
         if store.get_state("blockednote_" + date + "_" + skey) != note:
             store.set_state("blockednote_" + date + "_" + skey, note)
             notify(f"🚫 {S['label']} सिग्नल वगळला: " + sig["blocked"])
+        return
+
+    # 🛡️ सूचक-एकता दरवाजा (quality.py) — कुटुंबात एकाच बाजूला 2 ट्रेड
+    # उघडे/तोट्यात असतील तर तिसरी एंट्री थांबवली (acted कॅन्डल खर्च न होता)
+    ok, _why = quality.index_gate(date, S, sig["side"])
+    if not ok:
         return
 
     # एकाच 5-मिनिट कॅन्डलवर दोनदा एंट्री नको
@@ -626,7 +634,7 @@ def _finish(S, pos, token, ltp, now, reason):
     else:
         pnl, exit_avg, chg, legs = paper.close_trade(pos["id"], ltp, reason,
                                                      now_str, S=S)
-    halted = risk.register_exit(pos["date"], pnl, S)
+    halted = risk.register_exit(pos["date"], pnl, S, now)
     full_reason = (" + ".join(str(l.get("label") or "") for l in legs)
                    or reason)
     in_ts = (pos["opened"] or "")[-8:-3] or "--:--"

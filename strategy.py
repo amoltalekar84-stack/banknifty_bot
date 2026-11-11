@@ -67,11 +67,13 @@ def last_completed_5m(cs, now, orb_end=None):
 
 
 def analyze(cs, spot, now, prev_close=None,
-            orb_start=None, orb_end=None):
+            orb_start=None, orb_end=None, brk_buffer_pct=0.0):
     """
     मुख्य विश्लेषण → सिग्नल dict किंवा None.
     फिल्टर वगळल्यास → {"blocked": कारण}
     orb_start/orb_end — सिम्बॉल-विशिष्ट ORB वेळ (डीफॉल्ट BANKNIFTY 9:15–9:30)
+    brk_buffer_pct — breakout-बफर: 5m कॅन्डल OR-उंच/स्तराच्या या % आत
+        असल्यास सिग्नल नाही (नकली-ब्रेक चाळणी; 0 = जुनेच वागणूक)
     """
     if spot is None or spot <= 0 or not cs:
         return None
@@ -97,10 +99,13 @@ def analyze(cs, spot, now, prev_close=None,
     if not last:
         return None
 
-    if last["c"] > orb["high"]:
+    # breakout-बफर: कडेवरचे/नजीकचे ब्रेक चाळले जातात (0.0 = जुनेच)
+    buf = (spot * brk_buffer_pct / 100.0) if (brk_buffer_pct and spot) else 0.0
+
+    if last["c"] > orb["high"] + buf:
         return {"side": "CE", "or_high": orb["high"], "or_low": orb["low"],
                 "breakout": last["c"], "candle_ts": last["ts"].isoformat()}
-    if last["c"] < orb["low"]:
+    if last["c"] < orb["low"] - buf:
         return {"side": "PE", "or_high": orb["high"], "or_low": orb["low"],
                 "breakout": last["c"], "candle_ts": last["ts"].isoformat()}
     return None

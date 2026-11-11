@@ -266,6 +266,13 @@ def total_pnl_symbol(symbol):
     return round(row["s"], 2) if row else 0.0
 
 
+def last_closed(symbol, n=10):
+    """सिम्बॉलचे शेवटचे n बंद ट्रेड (जुने→नवीन क्रमाने) — गुणवत्ता-लॅडरसाठी"""
+    rows = _q("SELECT * FROM trades WHERE symbol=? AND status='CLOSED' "
+              "ORDER BY id DESC LIMIT ?", (symbol, n), fetch="all") or []
+    return [dict(r) for r in reversed(rows)]
+
+
 def today_charges(date, symbol=None):
     """आजचा एकूण खर्च (ब्रोकरेज+कर) — फक्त पूर्ण झालेल्या ट्रेड्सचा"""
     return round(sum((t["charges"] or 0)
