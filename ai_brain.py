@@ -126,6 +126,7 @@ def _parse_ai_json(txt):
     if not txt:
         return None
     s = str(txt)
+    s = re.sub(r"<think>.*?</think>", " ", s, flags=re.S)  # विचार-मजकूर पूर्ण काढा
     if "```" in s:
         m = re.findall(r"```(?:json)?\s*(.*?)```", s, re.S)
         if m:
@@ -171,10 +172,15 @@ def _ask_ollama(prompt):
     """① VM-वरील मोफत डोके (Ollama) — ना की, ना मर्यादा, ना बिल."""
     body = {"model": C.AI_MODEL,
             "messages": [{"role": "user", "content": prompt}],
-            "stream": False, "format": "json",
+            "stream": False, "format": "json", "think": False,
             "options": {"temperature": 0.2, "num_predict": 700}}
-    j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
-                   C.AI_TIMEOUT)
+    try:
+        j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
+                       C.AI_TIMEOUT)
+    except urllib.error.HTTPError:
+        body.pop("think", None)        # जुनी Ollama — think-पॅराम नाही
+        j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
+                       C.AI_TIMEOUT)
     return ((j.get("message") or {}).get("content") or "")
 
 
