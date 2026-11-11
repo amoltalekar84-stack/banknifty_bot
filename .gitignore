@@ -15,4 +15,5 @@ bot.db
 
 # बॅकटेस्ट-कॅश (डेटा मोठा — repo मध्ये नको)
 bt_cache/
+bt_cache_mcx/
 
