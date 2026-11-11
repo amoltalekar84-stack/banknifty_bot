@@ -58,6 +58,86 @@ FAM_STYLE = {
     "F4": {"c": "#34d399", "icon": "⚙️"},
 }
 
+# ------------------------------------------------------------------
+# 🎨 डॅश-थीम इंजिन — "रंगांची भाषा बदलते, आकार नाही"
+# ------------------------------------------------------------------
+# यंत्रणा (super-mind): build_dashboard() च्या शेवटी एकच remap-पास —
+# बेस-पॅलेटमधील hex → थीम-hex (case-insensitive, एकच पास = chain नाही:
+# 86efac→22c55e पुन्हा 15803d होत नाही), आणि rgba(r,g,b, प्रिफिक्स →
+# थीम-ग्लास (बॉर्डर/डिव्हाइडर/ग्लो सगळे एकत्र थीमात रंगतात). dash.CSS
+# पण त्याच पासने थीम होऊन <style> टॅगमध्ये कॉम्पोनेंटबरोबर जाते — पान-पातळी
+# CSS जुना राहतो पण डॉक्युमेंटमध्ये नंतर आलेला नियम जिंकतो.
+# नियम: 5 'डार्क' थीम फक्त सरफेस/मजकूर/म्यूट बदलतात — मोड्यूल-प्रतीक-रंग
+# (BANKNIFTY जांभळा, GOLD सोनं, SILVER चंदेरी…) आणि P&L हिरवा-लाल सर्व
+# थीममध्ये तसेच (वाचनीयता + ओळख). 'dawn' (लाईट) एकच पूर्ण-रीमॅप —
+# उजळ लेख्यावर वाचनीयतेसाठी सगळे उलटे करते.
+THEMES = {
+    "midnight": {"label": "🌑 रातराणी (सध्याची)", "hex": {}, "rgb": {}},
+    "dawn": {"label": "🌅 सोनेरी पहाट (लाईट)", "rgb": {
+        "rgba(148,163,184,": "rgba(101,88,62,",
+        "rgba(255,255,255,": "rgba(255,253,246,",
+        "rgba(2,6,17,": "rgba(59,48,28,",
+        "rgba(4,6,12,": "rgba(59,48,28,",
+        "rgba(0,0,0,": "rgba(68,58,38,",}, "hex": {
+        "#04060c": "#f2e9d5", "#0f172a": "#fffdf6",
+        "#f1f5f9": "#292524", "#f8fafc": "#33302b", "#e2e8f0": "#3f3a33",
+        "#e0f2fe": "#0c4a6e", "#c7d2fe": "#3730a3", "#a5b4fc": "#4338ca",
+        "#8ea0b9": "#8c7a5c", "#9fb0c8": "#7d6f55", "#aab8cf": "#6e6250",
+        "#94a3b8": "#8a7a5f", "#64748b": "#8a7355", "#475569": "#6d5f44",
+        "#334155": "#5a4d36", "#3b4a63": "#665840", "#cbd5e1": "#5f5850",
+        "#6366f1": "#4338ca", "#818cf8": "#4f46e5", "#60a5fa": "#2563eb",
+        "#0ea5e9": "#0284c7", "#38bdf8": "#0ea5e9", "#7dd3fc": "#38bdf8",
+        "#22d3ee": "#0891b2", "#a78bfa": "#7c3aed", "#f472b6": "#db2777",
+        "#fb923c": "#ea580c", "#fbbf24": "#d97706", "#f59e0b": "#b45309",
+        "#fcd34d": "#ca8a04",
+        "#4ade80": "#16a34a", "#86efac": "#22c55e", "#6ee7b7": "#0d9488",
+        "#34d399": "#059669", "#22c55e": "#15803d", "#059669": "#047857",
+        "#f87171": "#dc2626", "#fca5a5": "#ef4444", "#fda4af": "#e11d48",
+        "#ef4444": "#b91c1c", "#b91c1c": "#991b1b"}},
+    "ocean": {"label": "🌊 अरबी सागर", "rgb": {
+        "rgba(148,163,184,": "rgba(64,146,160,",
+        "rgba(2,6,17,": "rgba(2,16,24,",
+        "rgba(4,6,12,": "rgba(3,20,29,",}, "hex": {
+        "#04060c": "#02141d", "#0f172a": "#052734",
+        "#f1f5f9": "#e2f6fa", "#f8fafc": "#d9f1f6", "#e2e8f0": "#c4e6ee",
+        "#e0f2fe": "#a7dbe8", "#c7d2fe": "#9ec9dd", "#a5b4fc": "#8fc0d8",
+        "#8ea0b9": "#7aa7b5", "#9fb0c8": "#8ab5c2", "#aab8cf": "#98c2cd",
+        "#94a3b8": "#74a5b3", "#64748b": "#5c8e9c", "#475569": "#376371",
+        "#334155": "#29525f", "#3b4a63": "#2e5e6c"}},
+    "forest": {"label": "🌲 घनदाट जंगल", "rgb": {
+        "rgba(148,163,184,": "rgba(62,140,90,",
+        "rgba(2,6,17,": "rgba(3,15,9,",
+        "rgba(4,6,12,": "rgba(4,18,11,",}, "hex": {
+        "#04060c": "#04120b", "#0f172a": "#0a2416",
+        "#f1f5f9": "#e3f3e8", "#f8fafc": "#d8ecdf", "#e2e8f0": "#c4e2cf",
+        "#e0f2fe": "#a8d8bb", "#c7d2fe": "#9ccdb0", "#a5b4fc": "#8fc2a3",
+        "#8ea0b9": "#79a88a", "#9fb0c8": "#8ab697", "#aab8cf": "#99c3a6",
+        "#94a3b8": "#73a184", "#64748b": "#5c8a6c", "#475569": "#376b49",
+        "#334155": "#2a593a", "#3b4a63": "#2f6642"}},
+    "diwali": {"label": "🪔 दिवाळी (लावण्या)", "rgb": {
+        "rgba(148,163,184,": "rgba(205,153,73,",
+        "rgba(2,6,17,": "rgba(22,10,7,",
+        "rgba(4,6,12,": "rgba(26,12,8,",}, "hex": {
+        "#04060c": "#160a07", "#0f172a": "#2a180c",
+        "#f1f5f9": "#f8ecd9", "#f8fafc": "#f2e3cb", "#e2e8f0": "#e9d5b5",
+        "#e0f2fe": "#d6b98a", "#c7d2fe": "#d2ab72", "#a5b4fc": "#c69c60",
+        "#8ea0b9": "#a98e62", "#9fb0c8": "#b89a6e", "#aab8cf": "#c3a578",
+        "#94a3b8": "#a0855c", "#64748b": "#8a7146", "#475569": "#6e5731",
+        "#334155": "#5c4826", "#3b4a63": "#6a5228"}},
+    "oled": {"label": "⚫ OLED काळा (बॅटरी-सेव्हर)", "rgb": {
+        "rgba(148,163,184,": "rgba(108,108,116,",
+        "rgba(2,6,17,": "rgba(0,0,0,",
+        "rgba(4,6,12,": "rgba(4,4,5,",}, "hex": {
+        "#04060c": "#000000", "#0f172a": "#0c0c0e",
+        "#f1f5f9": "#fafafa", "#f8fafc": "#f1f1f3", "#e2e8f0": "#d6d6da",
+        "#e0f2fe": "#b9d8e4", "#c7d2fe": "#b6bdf0", "#a5b4fc": "#9aa5ec",
+        "#8ea0b9": "#8d8d95", "#9fb0c8": "#9c9ca4", "#aab8cf": "#a8a8b0",
+        "#94a3b8": "#8a8a92", "#64748b": "#5f5f66", "#475569": "#45454c",
+        "#334155": "#34343a", "#3b4a63": "#3a3a41"}},
+}
+_THEME_RE_CACHE = {}                   # theme-key → compiled regex
+
+
 # दिवसाचे नोड्स — वेळापत्रक आणि ⏭ पुढील-घटना काउंटडाउन दोन्ही इथूनच
 _TL_NODES = [("09:00", "MCX ओपन"), ("09:15", "NSE ओपन + ORB"),
              ("09:20", "🎯 Swing स्कॅन"), ("09:35", "👨‍👩‍👧 Family स्कॅन"),
@@ -2001,8 +2081,67 @@ def _family(n, date):
             "".join(cards_html), best_line, f_det)
 
 
-def build_dashboard():
+# ------------------------------------------------------------------
+# 🎨 थीम-साहाय्यी — एकच remap-पास, थीम-निवड store मध्ये सुरू राहते
+# ------------------------------------------------------------------
+def _theme_hex_re(key):
+    """थीम-मॅपमधील सर्व hex कींचे एक compiled regex (cache एकदाच)"""
+    pat = _THEME_RE_CACHE.get(key)
+    if pat is None:
+        keys = sorted(THEMES[key]["hex"], key=len, reverse=True)
+        pat = _re.compile("|".join(_re.escape(k) for k in keys), _re.IGNORECASE)
+        _THEME_RE_CACHE[key] = pat
+    return pat
+
+
+def _apply_theme(s, key):
+    """एका string वर थीम-रीमॅप: hex case-insensitive (एकच पास — chain नाही)
+    + rgba(r,g,b, प्रिफिक्स → थीम-ग्लास. रिकामी मॅप = जसं तसं परत."""
+    th = THEMES[key]
+    hx, rg = th.get("hex") or {}, th.get("rgb") or {}
+    if hx:
+        s = _theme_hex_re(key).sub(lambda m: hx[m.group(0).lower()], s)
+    for k, v in rg.items():
+        s = s.replace(k, v)
+    return s
+
+
+def current_theme():
+    """store मधून निवडलेली थीम; नसेल/अवैध असेल तर midnight"""
+    k = store.get_state("dash_theme")
+    return k if k in THEMES else "midnight"
+
+
+def set_theme(key):
+    """थीम निवड store मध्ये सुरू — रिफ्रेश/डिव्हाइस-बदलानंतरही टिकते"""
+    if key in THEMES:
+        store.set_state("dash_theme", key)
+
+
+def theme_labels():
+    """Dropdown साठी लेबल-यादी (क्रम = THEMES क्रम)"""
+    return [t["label"] for t in THEMES.values()]
+
+
+def theme_label_of(key):
+    """थीम-की → लेबल (अवैध असेल तर midnight-लेबल)"""
+    return THEMES[key]["label"] if key in THEMES else THEMES["midnight"]["label"]
+
+
+def set_theme_by_label(label):
+    """Dropdown-लेबल → थीम-की store मध्ये; न मिळाले तर सायन"""
+    for k, t in THEMES.items():
+        if t["label"] == label:
+            store.set_state("dash_theme", k)
+            return k
+    return None
+
+
+def build_dashboard(theme=None):
     n = ist_now()
+    # 🎨 थीम: स्पष्ट दिलेली > store मधली > midnight (अवैध असल्यास पण midnight)
+    tkey = (current_theme() if theme is None else theme)
+    tkey = tkey if tkey in THEMES else "midnight"
     date = n.strftime("%Y-%m-%d")
     swing_html = _swing(n, date)
     family_html = _family(n, date)
@@ -2036,7 +2175,11 @@ def build_dashboard():
         _table(date),
         f'<div class="foot"><div class="fn">🧪 PAPER मोड — सर्व ऑर्डर कागदी • आपोआप रिफ्रेश दर 10 सेकंद • '
         f'संपूर्ण नियंत्रण Telegram बॉटवर</div>'
-        f'<div class="fn m">अपडेट: {n.strftime("%H:%M:%S")} IST</div></div>',
+        f'<div class="fn m">अपडेट: {n.strftime("%H:%M:%S")} IST • 🎨 थीम: {theme_label_of(tkey)}</div></div>',
         "</div>",
     ]
-    return "".join(parts)
+    html = "".join(parts)
+    if tkey == "midnight":                 # बेस-थीम = पान-पातळी CSS तसेच
+        return html
+    # थीम CSS <style> टॅगमध्ये कॉम्पोनेंटबरोबर — नंतर आलेला नियम पान-पातळीवर विजयी
+    return "<style>" + _apply_theme(CSS, tkey) + "</style>" + _apply_theme(html, tkey)

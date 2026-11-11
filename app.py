@@ -318,6 +318,14 @@ def _refresh_gate(unlocked):
     return dash.build_dashboard() if unlocked else dash.LOCKED_HTML
 
 
+def _theme_gate(label, unlocked):
+    """🎨 थीम-निवड → store मध्ये सुरू (रिफ्रेश/पुन्हा-भेटीनंतरही टिकते);
+    अनलॉक असल्यासच थीम-डॅश परत, लॉक असल्यास लॉक-स्क्रीन तसेच."""
+    if label:
+        dash.set_theme_by_label(label)
+    return dash.build_dashboard() if unlocked else dash.LOCKED_HTML
+
+
 def _make_blocks():
     """head param जुन्या Gradio मध्ये नसेल तरी डॅशबोर्ड चालण्यासाठी fallback"""
     try:
@@ -330,10 +338,15 @@ def _make_blocks():
 with _make_blocks() as demo:
     board = gr.HTML(dash.LOCKED_HTML)          # सुरुवातीला नेहमी लॉक (की-विना डेटा नाही)
     unlocked = gr.State(False)                 # की जुळली का? (लोड वेळी ठरते)
+    theme_dd = gr.Dropdown(choices=dash.theme_labels(),
+                           value=dash.theme_label_of(dash.current_theme()),
+                           label="🎨 डॅश-थीम — एका क्लिकवर पूर्ण पॅलेट-बदल",
+                           elem_id="theme-dd")
     btn = gr.Button("🔄 रिफ्रेश", elem_id="refresh-btn")
     demo.load(_load_gate, None, [board, unlocked])
     gr.Timer(10).tick(_refresh_gate, unlocked, board)   # दर 10 सेकंदांनी — फक्त अनलॉक असल्यास
     btn.click(_refresh_gate, unlocked, board)
+    theme_dd.change(_theme_gate, [theme_dd, unlocked], board)   # थीम-बदल → लगेच नवा पॅलेट
 
 if __name__ == "__main__":
     # Render आपोआप PORT env var देतो; स्थानिक चाचणीसाठी 7860
