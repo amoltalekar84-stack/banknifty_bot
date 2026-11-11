@@ -311,7 +311,7 @@ AI_BRAIN_ENABLED = os.getenv("AI_BRAIN_ENABLED", "YES").strip().upper() != "NO"
 AI_BRAIN_AT = os.getenv("AI_BRAIN_AT", "20:32")   # EVAL-DAILY (20:30) नंतर
 AI_MODEL = os.getenv("AI_MODEL", "qwen3:4b")      # Ollama मॉडेल (HF वर मोफत)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-AI_TIMEOUT = _i("AI_TIMEOUT", 90)                 # प्रोव्हाइडर-कॉल टाइमआउट से
+AI_TIMEOUT = _i("AI_TIMEOUT", 300)                # प्रोव्हाइडर-कॉल टाइमआउट से (1-OCPU ARM वर स्थानिक-मॉडेल लोड+उत्तर 90-120से — 5 मि सुरक्षित-सीमा)
 AI_BRAIN_HOLD_MIN = _i("AI_BRAIN_HOLD_MIN", 30)   # सर्किट-ब्रेकर धारणा मिनिटे
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()   # बैकअप-डोके (की असेल तरच)
 AI_CLOUD_MODEL = os.getenv("AI_CLOUD_MODEL", "llama-3.3-70b-versatile")

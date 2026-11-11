@@ -173,6 +173,7 @@ def _ask_ollama(prompt):
     body = {"model": C.AI_MODEL,
             "messages": [{"role": "user", "content": prompt}],
             "stream": False, "format": "json", "think": False,
+            "keep_alive": "15m",
             "options": {"temperature": 0.2, "num_predict": 700}}
     try:
         j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
