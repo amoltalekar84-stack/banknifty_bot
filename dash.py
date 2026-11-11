@@ -8,6 +8,7 @@ from datetime import time as dtime
 from datetime import datetime
 from datetime import timedelta
 from zoneinfo import ZoneInfo
+import calendar
 import html as _h
 import os
 import re as _re
@@ -317,6 +318,59 @@ font-weight:700;font-size:11px;padding:2px 7px;border-radius:6px}
 display:flex;align-items:center;gap:9px;flex-wrap:wrap;
 background:rgba(56,189,248,.08);border:1px dashed rgba(56,189,248,.35);color:#7dd3fc}
 .dash .nextn b{font-family:MONOFONT;color:#e0f2fe}
+/* 📍 सेशन-प्रगती पट्टी — दिवस कुठे आहे ते एका दृष्टीत */
+.dash .sess{padding:13px 20px 11px;margin:0 0 2px}
+.dash .stitle{font-size:11px;font-weight:700;color:#8ea0b9;letter-spacing:1.2px}
+.dash .strack{position:relative;height:3px;border-radius:2px;background:rgba(148,163,184,.16);margin:34px 8px 30px}
+.dash .sfill{position:absolute;left:0;top:0;bottom:0;border-radius:2px;
+background:linear-gradient(90deg,rgba(34,211,238,.4),rgba(56,189,248,.8))}
+.dash .snode{position:absolute;top:50%;width:9px;height:9px;border-radius:50%;transform:translate(-50%,-50%);
+background:#334155;border:1.5px solid rgba(148,163,184,.45);z-index:1}
+.dash .snode.done{background:#22d3ee;border-color:#7dd3fc;box-shadow:0 0 8px rgba(34,211,238,.5)}
+.dash .snlab{position:absolute;top:11px;transform:translateX(-50%);text-align:center;
+font-size:9.2px;font-weight:600;color:#64748b;white-space:nowrap;line-height:1.35}
+.dash .snlab b{display:block;font-family:MONOFONT;font-size:9.4px;font-weight:700;color:#8ea0b9}
+.dash .snow{position:absolute;top:50%;width:15px;height:15px;border-radius:50%;transform:translate(-50%,-50%);
+background:radial-gradient(circle,#e0f2fe 22%,#38bdf8 75%);border:2px solid #e0f2fe;z-index:3;animation:snowpulse 2.2s infinite}
+@keyframes snowpulse{0%,100%{box-shadow:0 0 10px rgba(56,189,248,.75),0 0 24px rgba(56,189,248,.3)}50%{box-shadow:0 0 16px rgba(56,189,248,.95),0 0 38px rgba(56,189,248,.5)}}
+.dash .snowlab{position:absolute;top:-30px;transform:translateX(-50%);font-family:MONOFONT;font-size:10px;font-weight:800;
+color:#e0f2fe;white-space:nowrap;background:rgba(56,189,248,.13);border:1px solid rgba(56,189,248,.55);
+border-radius:999px;padding:2.5px 9px;backdrop-filter:blur(4px)}
+.dash .sess.we .snowlab{border-color:rgba(148,163,184,.4);background:rgba(148,163,184,.1);color:#94a3b8}
+/* 🧠 बुद्धीचा डब्बा */
+.dash .ins{padding:7px 18px}
+.dash .irow{padding:8.5px 0;border-bottom:1px dashed rgba(148,163,184,.09);font-size:12.4px;color:#cbd5e1;line-height:1.6}
+.dash .irow:last-child{border-bottom:none}
+.dash .irow b{color:#f1f5f9;font-family:MONOFONT}
+/* 🗓️ महिना P&L कॅलेंडर-हीटमॅप */
+.dash .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:6px}
+.dash .cal .ch{font-size:9.6px;font-weight:700;color:#64748b;text-align:center;padding:2px 0;letter-spacing:.4px}
+.dash .cd{position:relative;min-height:42px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+font-family:MONOFONT;font-size:10.8px;font-weight:700;color:#f1f5f9;
+background:rgba(148,163,184,.06);border:1px solid rgba(148,163,184,.08)}
+.dash .cd .dn{position:absolute;top:3px;left:6px;font-size:8px;font-weight:700;
+font-family:MONOFONT;color:rgba(226,232,240,.5)}
+.dash .cd.emp{background:transparent;border-color:transparent}
+.dash .cd.we{background:rgba(148,163,184,.025)}
+.dash .cd.we .dn{color:rgba(148,163,184,.32)}
+.dash .cd.fut{background:transparent;border:1px dashed rgba(148,163,184,.14);color:transparent}
+.dash .cd.fut .dn{color:rgba(148,163,184,.3)}
+.dash .cd.today{border:1.5px solid rgba(56,189,248,.8);box-shadow:0 0 10px rgba(56,189,248,.35)}
+.dash .cleg{display:flex;gap:14px;flex-wrap:wrap;margin-top:11px;font-size:10.8px;color:#64748b;align-items:center}
+.dash .cleg b{font-family:MONOFONT;color:#cbd5e1}
+.dash .cscale{display:inline-flex;gap:3px;align-items:center}
+.dash .cscale i{width:11px;height:11px;border-radius:3px;display:inline-block;border:1px solid rgba(255,255,255,.06)}
+/* 🏆 मेडल-लीडरबोर्ड */
+.dash .lbr{display:flex;align-items:center;gap:9px;padding:7.5px 10px;border-radius:11px;
+border:1px solid rgba(148,163,184,.10);background:rgba(148,163,184,.04);margin-bottom:6px}
+.dash .lbr .rk{font-size:13.5px;width:28px;flex:none;text-align:center;font-family:MONOFONT;font-weight:800;color:#94a3b8}
+.dash .lbr .nm{flex:1;min-width:0;font-size:12.4px;font-weight:700;color:#e2e8f0;
+white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dash .lbr .nt{font-size:10px;color:#64748b;font-weight:600;white-space:nowrap}
+.dash .lbr .lv{font-family:MONOFONT;font-weight:700;font-size:12.2px;flex:none}
+.dash .lbr.top1{border-color:rgba(251,191,36,.45);background:rgba(251,191,36,.07)}
+.dash .lbr.top1 .rk{font-size:16px}
+.dash .lbfoot{font-size:10.8px;color:#64748b;margin-top:9px}
 @media(max-width:760px){
   .dash .nav{padding:9px 10px;margin:0 -10px 6px;gap:6px}
   .dash .nav a{font-size:10.5px;padding:5px 9px}
@@ -329,6 +383,15 @@ background:rgba(56,189,248,.08);border:1px dashed rgba(56,189,248,.35);color:#7d
   .dash table.tbl.mtd td,.dash table.tbl.mtd th{padding:8px 6px}
   .dash .hnote{font-size:10px;gap:8px}
   .dash .nextn{font-size:11px}
+  .dash .sess{padding:11px 12px 8px}
+  .dash .strack{margin:30px 4px 24px}
+  .dash .snlab{display:none}
+  .dash .snowlab{font-size:9px;padding:2px 7px}
+  .dash .cal{gap:3px}
+  .dash .cd{min-height:33px;font-size:9.2px;border-radius:7px}
+  .dash .cd .dn{font-size:7.2px;left:4px;top:2px}
+  .dash .lbr{padding:6px 7px;gap:6px}
+  .dash .lbr .nt{display:none}
 }
 """.replace("MONOFONT", _MONO)
 
@@ -959,9 +1022,272 @@ def _daily_hist(n, date):
             + _mtd_summary(date) + "</div>")
 
 
+_MAR_M = ["जानु", "फेब्रु", "मार्च", "एप्रि", "मे", "जून", "जुलै", "ऑग",
+          "सप्टें", "ऑक्टो", "नोव्हें", "डिसें"]
+_MAR_W = ["सोम", "मंगळ", "बुध", "गुरु", "शुक्र", "शनि", "रवि"]
+
+
+def _sessbar(n, date):
+    """📍 सेशन-प्रगती पट्टी — दिवसाचे नोड्स एकसारखे पसरून, आता-सूचक खर्या वेळेप्रमाणे
+    (नोड्समधील तोटा piecewise-linear मॅपिंगने जागा मिळतो — वेळ अचूकच दिसते)"""
+    pts = []
+    for hhmm, lab in _TL_NODES:
+        h, m = hhmm.split(":")
+        pts.append((int(h) * 60 + int(m), hhmm, lab))
+    k = len(pts) - 1
+    pct = [round(i * 100.0 / k, 2) for i in range(len(pts))]
+    cur = n.hour * 60 + n.minute
+    we = n.weekday() >= 5
+
+    def vis(mins):
+        if mins <= pts[0][0]:
+            return 0.0
+        if mins >= pts[-1][0]:
+            return 100.0
+        for i in range(k):
+            a, b = pts[i][0], pts[i + 1][0]
+            if a <= mins <= b:
+                f = (mins - a) / float(b - a) if b > a else 0.0
+                return (i + f) * 100.0 / k
+        return 100.0
+
+    dots, labs = [], []
+    for i, (mn, hhmm, lab) in enumerate(pts):
+        cls = "snode done" if (not we and cur >= mn) else "snode"
+        dots.append('<div class="' + cls + '" style="left:' + str(pct[i]) + '%"></div>')
+        labs.append('<div class="snlab" style="left:' + str(pct[i]) + '%"><b>' +
+                    hhmm + "</b>" + _h.escape(lab) + "</div>")
+    if we:
+        head = "📍 आज बाजार सुट्टी — सोम–शुक्र ट्रेडिंग"
+        now_h = ""
+    else:
+        pos = vis(cur)
+        if cur < pts[0][0]:
+            bub = "उघडण्यापूर्वी"
+        elif cur >= pts[-1][0]:
+            bub = "आजचा दिवस संपला"
+        else:
+            bub = "आता " + n.strftime("%H:%M")
+        fill = ('<div class="sfill" style="width:' + str(round(pos, 2)) +
+                '%"></div>') if pos > 0.3 else ""
+        lab_pos = min(max(pos, 7.0), 93.0)
+        now_h = (fill + '<div class="snow" style="left:' + str(round(pos, 2)) +
+                 '%"></div><div class="snowlab" style="left:' +
+                 str(round(lab_pos, 2)) + '%">' + bub + "</div>")
+        head = "📍 दिवस कुठे आहे? — 09:00 → 23:05 एका दृष्टीत"
+    return ('<div class="panel gx sess"><div class="stitle">' + head + "</div>"
+            '<div class="strack">' + "".join(dots) + "".join(labs) + now_h +
+            "</div></div>")
+
+
+def _agg5(trs):
+    """(n, W, L, खर्च, निव्वल) — बंद-ट्रेड्सवर"""
+    cl = [t for t in trs if t.get("status") == "CLOSED"]
+    w = sum(1 for t in cl if (t.get("pnl") or 0) > 0)
+    l = sum(1 for t in cl if (t.get("pnl") or 0) < 0)
+    return (len(cl), w, l,
+            round(sum((t.get("charges") or 0) for t in cl), 2),
+            round(sum((t.get("pnl") or 0) for t in cl), 2))
+
+
+def _month_rows(date):
+    """MTD — प्रत्येक मोड्यूलची सारांश-ओळ (लीडरबोर्ड + बुद्धीचा डब्बा दोन्ही वापरतात)"""
+    ym = date[:7]
+    rows = []
+    for s in C.active_symbols():
+        st = SYM_STYLE.get(s["key"], {"c": "#818cf8", "icon": "📊"})
+        n_, w, l, chg, net = _agg5(store.month_trades(ym, s["key"]))
+        rows.append({"key": s["key"], "icon": st["icon"], "name": s["short"],
+                     "c": st["c"], "n": n_, "w": w, "l": l, "chg": chg,
+                     "net": net})
+    if swing is not None and getattr(swing, "ENABLED", False):
+        n_, w, l, chg, net = _agg5(store.swing_month(ym))
+        rows.append({"key": "SWING", "icon": "🎯", "name": "Swing",
+                     "c": "#22d3ee", "n": n_, "w": w, "l": l, "chg": chg,
+                     "net": net})
+    if family is not None and getattr(family, "ENABLED", False):
+        n_, w, l, chg, net = _agg5(store.family_month(ym))
+        rows.append({"key": "FAMILY", "icon": "👨‍👩‍👧", "name": "Family",
+                     "c": "#f59e0b", "n": n_, "w": w, "l": l, "chg": chg,
+                     "net": net})
+    return rows
+
+
+def _calheat(date):
+    """🗓️ महिना-भर P&L कॅलेंडर-हीटमॅप — प्रत्येक दिवसाची पेशी निव्वल-प्रमाणे हिरवी/लाल"""
+    ym = date[:7]
+    yy, mm = int(ym[:4]), int(ym[5:7])
+    first_wd, ndays = calendar.monthrange(yy, mm)
+    try:
+        hist = store.daily_net_hist(ym + "-01")
+    except Exception:
+        hist = {}
+    today_i = int(date[8:10])
+    mx = max([abs(float(v[0])) for v in hist.values()] + [1.0])
+    cells = ['<div class="ch">' + w + "</div>" for w in _MAR_W]
+    cells += ['<div class="cd emp"></div>'] * first_wd
+    for dnum in range(1, ndays + 1):
+        wd = (first_wd + dnum - 1) % 7
+        we = wd >= 5
+        cls = "cd" + (" we" if we else "")
+        style = ""
+        val = "·"
+        dstr = ym + "-" + ("%02d" % dnum)
+        dmar = str(dnum) + " " + _MAR_M[mm - 1]
+        if dnum > today_i:
+            cls += " fut"
+            val = ""
+            tip = dmar
+        else:
+            e = hist.get(dstr)
+            if e and abs(float(e[0])) >= 0.005:
+                net = float(e[0])
+                a = 0.20 + 0.70 * min(1.0, abs(net) / mx)
+                col = "52,211,153" if net > 0 else "248,113,113"
+                style = "background:rgba(" + col + "," + str(round(a, 2)) + ")"
+                val = _k(net)
+                tip = (dmar + " • " + _sign(net) + _inr(abs(net)) + " • " +
+                       str(int(e[2] or 0)) + " ट्रेड")
+            else:
+                tip = dmar + (" • सुट्टी" if we else " • ट्रेड नाही")
+        if dnum == today_i:
+            cls += " today"
+        cells.append('<div class="' + cls + '" style="' + style +
+                     '" title="' + _h.escape(tip) + '"><span class="dn">' +
+                     str(dnum) + "</span>" + val + "</div>")
+    mnet = round(sum(float(v[0]) for v in hist.values()), 2)
+    mtr = sum(int(v[2] or 0) for v in hist.values())
+    scale = "".join('<i style="background:rgba(52,211,153,' +
+                    str(round(0.20 + 0.70 * f, 2)) + ')"></i>'
+                    for f in (0.0, 0.33, 0.66, 1.0))
+    scale += ('<i style="background:rgba(248,113,113,.85)"></i>'
+              '<i style="background:rgba(248,113,113,.45)"></i>'
+              '<i style="background:rgba(248,113,113,.2)"></i>')
+    leg = ('<div class="cleg"><span class="cscale">' + scale +
+           " तोटा ← निव्वल → नफा</span>"
+           "<span>महिना: <b class='" + _cls(mnet) + "'>" + _sign(mnet) +
+           _inr(abs(mnet)) + "</b></span>"
+           "<span>💹 <b>" + str(mtr) + "</b> बंद-ट्रेड</span></div>")
+    return ('<div class="panel gx"><div class="ptitle">🗓️ ' + _MAR_M[mm - 1] +
+            " MTD कॅलेंडर — प्रत्येक दिवसाचा निव्वल</div>"
+            '<div class="cal">' + "".join(cells) + "</div>" + leg + "</div>")
+
+
+def _leaderboard(date):
+    """🏆 मेडल-लीडरबोर्ड — MTD निव्वलानुसार सर्व मोड्यूल क्रमवारी"""
+    rows = [r for r in _month_rows(date) if r["n"] > 0]
+    if not rows:
+        return ('<div class="panel gx"><div class="ptitle">🏆 मेडल-लीडरबोर्ड '
+                "— MTD निव्वलानुसार</div>"
+                '<div class="dtempty">अजून बंद-ट्रेड नाहीत — दरवाजे उघडताच इथे '
+                "क्रमवारी येईल</div></div>")
+    rows.sort(key=lambda r: r["net"], reverse=True)
+    medals = ["🥇", "🥈", "🥉"]
+    out = []
+    for i, r in enumerate(rows):
+        rk = medals[i] if i < 3 else str(i + 1) + "."
+        cls = "lbr" + (" top1" if i == 0 else "")
+        out.append('<div class="' + cls + '"><span class="rk">' + rk +
+                   '</span><span class="nm">' + r["icon"] + " " +
+                   _h.escape(r["name"]) + '</span><span class="nt">' +
+                   str(r["n"]) + " ट्रेड</span>" + _wr_chip(r["w"], r["l"]) +
+                   '<span class="lv">' + _spnl(r["net"]) + "</span></div>")
+    tot = round(sum(r["net"] for r in rows), 2)
+    foot = ('<div class="lbfoot">एकूण ' + str(len(rows)) +
+            " मोड्यूल सक्रिय • MTD निव्वल " + _spnl(tot) + "</div>")
+    return ('<div class="panel gx"><div class="ptitle">🏆 मेडल-लीडरबोर्ड — MTD '
+            "निव्वलानुसार</div>" + "".join(out) + foot + "</div>")
+
+
+def _insights(date):
+    """🧠 बुद्धीचा डब्बा — डेटामधून आपोआप तयार होणारे विचार (सर्व आकडे खरे, काहीच बनावट नाही)"""
+    rows = _month_rows(date)
+    act = [r for r in rows if r["n"] > 0]
+    bullets = []
+    if act:
+        tot_net = round(sum(r["net"] for r in rows), 2)
+        tot_chg = round(sum(r["chg"] for r in rows), 2)
+        best = max(act, key=lambda r: r["net"])
+        if best["net"] > 0.005:
+            share = int(round(best["net"] * 100.0 / tot_net)) if tot_net > 0.005 else 0
+            t = ("🥇 <b>" + _h.escape(best["name"]) + "</b> सध्या सर्वात जबाबदार — " +
+                 _spnl(best["net"]) + " (" + str(best["w"]) + "/" +
+                 str(best["w"] + best["l"]) + " हिट)")
+            if share >= 20:
+                t += " — MTD चा " + str(share) + "% इथूनच!"
+            bullets.append(t)
+        worst = min(act, key=lambda r: r["net"])
+        if worst["net"] < -0.005:
+            bullets.append("⚠️ <b>" + _h.escape(worst["name"]) +
+                           "</b> आडवा येतोय — " + _spnl(worst["net"]) + " (" +
+                           str(worst["l"]) +
+                           (" तोटा" if worst["l"] == 1 else " तोटे") +
+                           ") — याचा दरवाजा आज सावध")
+        hist, d0 = {}, None
+        try:
+            d0 = datetime.strptime(date, "%Y-%m-%d")
+            hist = store.daily_net_hist(
+                (d0 - timedelta(days=15)).strftime("%Y-%m-%d"))
+        except Exception:
+            pass
+        if d0 is not None:
+            streak, sgn = 0, 0
+            for i in range(1, 16):
+                e = hist.get((d0 - timedelta(days=i)).strftime("%Y-%m-%d"))
+                if not e or int(e[2] or 0) == 0:
+                    continue
+                s = 1 if float(e[0]) > 0.005 else \
+                    (-1 if float(e[0]) < -0.005 else 0)
+                if s == 0:
+                    break
+                if sgn == 0:
+                    sgn = s
+                if s != sgn:
+                    break
+                streak += 1
+            if streak >= 2:
+                if sgn > 0:
+                    bullets.append("🔥 सातत्य: शेवटचे <b>" + str(streak) +
+                                   "</b> ट्रेडिंग-दिवस सलग हिरवे — मोमेंटम चालू")
+                else:
+                    bullets.append("❄️ सावध: शेवटचे <b>" + str(streak) +
+                                   "</b> ट्रेडिंग-दिवस सलग लाल — भांडवलावर पाणी")
+        try:
+            mhist = store.daily_net_hist(date[:7] + "-01")
+        except Exception:
+            mhist = {}
+        act_days = [(ds, float(v[0])) for ds, v in mhist.items()
+                    if abs(float(v[0])) >= 0.005]
+        if act_days:
+            bd, bnet = max(act_days, key=lambda x: x[1])
+            bullets.append("🏆 सर्वोत्तम दिवस <b>" + bd[8:10] + " " +
+                           _MAR_M[int(date[5:7]) - 1] + "</b> — " + _spnl(bnet))
+        gross = tot_net + tot_chg
+        if gross > 0.005 and tot_chg > 0.005:
+            pct = tot_chg * 100.0 / gross
+            bullets.append("🧾 MTD ब्रोकरेज+टॅक्स <b>" + _inr(tot_chg) +
+                           "</b> — gross चा " +
+                           ("{:.1f}%".format(pct) if pct < 100 else ">100%") +
+                           " (म्हणूच निव्वल-गेट महत्त्वाचा)")
+        bullets.append("💼 MTD एकूण निव्वल <b>" + _sign(tot_net) +
+                       _inr(abs(tot_net)) + "</b> — " +
+                       str(sum(r["n"] for r in rows)) + " बंद-ट्रेड")
+    else:
+        bullets.append("🌱 अजून बंद-ट्रेड नाहीत — दरवाजे उघडताच इथे आपोआप विचार "
+                       "येत राहतील")
+    body = "".join('<div class="irow">' + b + "</div>" for b in bullets[:6])
+    return '<div class="panel gx ins">' + body + "</div>"
+
+
+def _calduo(date):
+    """🗓️ कॅलेंडर-हीटमॅप + 🏆 लीडरबोर्ड — महिन्याच्या आढाव्याची जोडी"""
+    return ('<div class="duo calduo">' + _calheat(date) + _leaderboard(date) +
+            "</div>")
+
+
 def _nav(swing_on, family_on):
     """🔝 स्टिकी जंप-नेव्ह — लांब डॅशबोर्डवर एका-क्लिकमध्ये विभागापर्यंत"""
-    links = [("sec-kpi", "📊 स्थिती"), ("sec-gates", "🚪 दरवाजे")]
+    links = [("sec-kpi", "📊 स्थिती"), ("sec-ins", "🧠 बुद्धी"), ("sec-gates", "🚪 दरवाजे")]
     if swing_on:
         links.append(("sec-swing", "🎯 Swing"))
     if family_on:
@@ -1220,8 +1546,11 @@ def build_dashboard():
         '<div class="dash">',
         _nav(bool(swing_html), bool(family_html)),
         _hero(n, date),
+        _sessbar(n, date),
         '<div class="sec" id="sec-kpi"><span class="t">📌 आजची स्थिती</span><span class="ln"></span></div>',
         _kpis(n, date),
+        '<div class="sec" id="sec-ins"><span class="t">🧠 बुद्धीचा डब्बा — डेटामधून आपोआप तयार होणारे विचार</span><span class="ln"></span></div>',
+        _insights(date),
         '<div class="sec" id="sec-gates"><span class="t">🚪 {} दरवाजे — प्रत्येकी स्वतंत्र भांडवल व नियम</span><span class="ln"></span></div>'.format(len(C.active_symbols())),
         '<div class="syms">' + "".join(_sym_card(s, n, date) for s in C.active_symbols()) + "</div>",
         swing_html,
@@ -1230,7 +1559,8 @@ def build_dashboard():
         _timeline(n),
         '<div class="sec" id="sec-ov"><span class="t">📡 लाइव्ह आढावा</span><span class="ln"></span></div>',
         _overview(n, date),
-        '<div class="sec" id="sec-hist"><span class="t">📅 महिन्याचा आढावा — दैनिक निव्वल व MTD सारांश</span><span class="ln"></span></div>',
+        '<div class="sec" id="sec-hist"><span class="t">📅 महिन्याचा आढावा — कॅलेंडर • लीडरबोर्ड • दैनिक निव्वल • MTD</span><span class="ln"></span></div>',
+        _calduo(date),
         _daily_hist(n, date),
         '<div class="sec" id="sec-tr"><span class="t">💹 आजचे ट्रेड्स</span><span class="ln"></span></div>',
         _table(date),
