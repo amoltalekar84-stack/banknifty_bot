@@ -31,6 +31,11 @@ try:
 except Exception:                                  # module नसेल तरी डॅश चालणार
     family = None
 
+try:
+    import ai_brain                                # 🧠 रात्रीचा सल्लागार-विश्लेषक
+except Exception:                                  # module नसेल तरी डॅश चालणार
+    ai_brain = None
+
 IST = ZoneInfo("Asia/Kolkata")
 _MONO = "'JetBrains Mono','Noto Sans Devanagari',monospace"
 
@@ -1448,6 +1453,60 @@ def _insights(date):
 
 
 # ----------------------------------------------------------------
+# 🤖 AI ब्रेन सल्ला — रात्रीचे स्थानिक-डोक्याचे (Ollama) दैनिक विश्लेषण.
+# सल्लागार-विश्लेषणच — AI कधी ऑर्डर/गेट हाताळत नाही; आकडे सगळे खरे
+# (store मधून), वाक्ये टेम्पलेटमधून; मॉडेल-मजकूर escape केलेला.
+# ----------------------------------------------------------------
+def _ai_card(n, date):
+    if ai_brain is None or not ai_brain.enabled():
+        return ""
+    rep = ai_brain.load_report(date)
+    stale = ""
+    if not rep:
+        rep = ai_brain.load_last()
+        if rep and rep.get("date") != date:
+            stale = str(rep.get("date") or "")
+        else:
+            rep = None
+    if not rep:
+        return ('<div class="panel gx"><div class="irow">🤖 आजचे AI-ब्रेन विश्लेषण '
+                'रात्री ~20:32 नंतर आपोआप इथे येईल — तोपर्यंत व्यापार '
+                'नियम-इंजिनवर सामान्य चालू आहे.</div></div>')
+    chips = []
+    if rep.get("provider"):
+        chips.append("डोके: " + str(rep["provider"]) + ":" + str(rep.get("model") or ""))
+    chips.append("वेळ: " + _hhmm(str(rep.get("ts") or "")))
+    if rep.get("latency_s") is not None:
+        chips.append(str(rep["latency_s"]) + " से")
+    if stale:
+        chips.append("शेवटचे अहवाल: " + stale)
+    tot = float((rep.get("data") or {}).get("total") or 0)
+    ok = bool(rep.get("ok"))
+    tone = ((rep.get("ai") or {}).get("tone") or "warn") if ok else "neutral"
+    tc = {"good": "#4ade80", "warn": "#fbbf24", "bad": "#f87171"}.get(tone, "#94a3b8")
+    if ok:
+        headline = str((rep.get("ai") or {}).get("headline") or "")
+        lines = list(rep.get("lines") or [])[1:]          # headline आधी दाखवला
+    else:
+        headline = "AI ब्रेन आज उपलब्ध नव्हता"
+        lines = list(rep.get("lines") or [])
+    head = ('<div style="display:flex;justify-content:space-between;align-items:baseline;'
+            'gap:10px;flex-wrap:wrap;margin-bottom:4px">'
+            '<div style="font-size:13.4px;font-weight:700;color:' + tc + '">'
+            + _h.escape(headline, quote=False) + '</div>'
+            '<div class="chips" style="margin-top:0">'
+            + "".join('<span class="chip">' + _h.escape(c, quote=False) + '</span>'
+                      for c in chips)
+            + '<span class="chip">दिवस: ' + _spnl(tot) + '</span></div></div>')
+    rows = "".join('<div class="irow">' + _h.escape(str(ln), quote=False)
+                   + "</div>" for ln in lines[:7])
+    foot = ('<div style="font-size:10.5px;color:#64748b;margin-top:8px">'
+            'सल्लागार-विश्लेषण — अंतिम निर्णय नियम-इंजिनचा (9 दरवाजे) • '
+            'AI ऑर्डर कधी देत नाही • बंद करायचे: AI_BRAIN_ENABLED=NO</div>')
+    return '<div class="panel gx">' + head + rows + foot + "</div>"
+
+
+# ----------------------------------------------------------------
 # 🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर — निव्वल नाही, गुणवत्ता (PF • अपेक्षा • ग्रेड)
 # ----------------------------------------------------------------
 def _pgrade(gw, gl):
@@ -2473,6 +2532,8 @@ def build_dashboard(theme=None):
         _kpis(n, date),
         '<div class="sec" id="sec-ins"><span class="t">🧠 बुद्धीचा डब्बा — डेटामधून आपोआप तयार होणारे विचार</span><span class="ln"></span></div>',
         _insights(date),
+        *(('<div class="sec" id="sec-ai"><span class="t">🤖 AI ब्रेन सल्ला — मोफत स्थानिक डोके (Ollama) दैनिक विश्लेषण</span><span class="ln"></span></div>',
+           _ai_card(n, date)) if ai_brain is not None and ai_brain.enabled() else ()),
         '<div class="sec" id="sec-perf"><span class="t">🎯 स्ट्रॅटेजी परफॉर्मन्स ट्रॅकर — निव्वल नाही, गुणवत्ता (PF • अपेक्षा • ग्रेड)</span><span class="ln"></span></div>',
         _perftrack(date),
         '<div class="sec" id="sec-time"><span class="t">⏱️ पैसा कधी कमावतो? — बुकिंग-तास अभ्यास (सुरुवातीपासून)</span><span class="ln"></span></div>',

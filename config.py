@@ -300,6 +300,25 @@ SLIPPAGE = _f("SLIPPAGE", 0.0005)  # कागदी ट्रेडमध्य
 MODE = os.getenv("TRADING_MODE", "PAPER").strip().upper()
 
 
+# ---------------------------------------------------------------
+# 9. 🧠 AI ब्रेन — सल्लागार-विश्लेषक (सर्व मार्ग मोफत, शून्य खर्च)
+#    रोज AI_BRAIN_AT नंतर दिवसाचे आकडे वाचून मराठी विश्लेषण तयार करतो.
+#    AI कधीही ऑर्डर/गेट/halt हाताळत नाही — फक्त सल्ला.
+#    साखळी: Ollama (VM-वर, मोफत-अमर्यादित) → Groq (बैकअप) → HF (बैकअप) → स्किप.
+#    बंद करायचे: AI_BRAIN_ENABLED=NO (बॉटचे व्यापार तसेच चालू)
+# ---------------------------------------------------------------
+AI_BRAIN_ENABLED = os.getenv("AI_BRAIN_ENABLED", "YES").strip().upper() != "NO"
+AI_BRAIN_AT = os.getenv("AI_BRAIN_AT", "20:32")   # EVAL-DAILY (20:30) नंतर
+AI_MODEL = os.getenv("AI_MODEL", "qwen3:4b")      # Ollama मॉडेल (HF वर मोफत)
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
+AI_TIMEOUT = _i("AI_TIMEOUT", 90)                 # प्रोव्हाइडर-कॉल टाइमआउट से
+AI_BRAIN_HOLD_MIN = _i("AI_BRAIN_HOLD_MIN", 30)   # सर्किट-ब्रेकर धारणा मिनिटे
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()   # बैकअप-डोके (की असेल तरच)
+AI_CLOUD_MODEL = os.getenv("AI_CLOUD_MODEL", "llama-3.3-70b-versatile")
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()           # बैकअप-डोके (की असेल तरच)
+AI_HF_MODEL = os.getenv("AI_HF_MODEL", "Qwen/Qwen2.5-7B-Instruct")
+
+
 def active_symbols():
     """चालू करण्यायोग्य सिम्बॉल्स (ENABLE_<SYM>=NO असल्यास तो वगळला)"""
     return [s for s in SYMBOLS if _ENABLERS.get(s["key"], True)]

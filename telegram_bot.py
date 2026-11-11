@@ -366,6 +366,13 @@ def _eod_text(date=None):
             lines.extend(fam_lines)
     except Exception:
         pass
+    try:                                   # 🧠 AI ब्रेन सल्ला — आजचे विश्लेषण
+        import ai_brain
+        bl = ai_brain.eod_lines(date)
+        if bl:
+            lines.extend(bl)
+    except Exception:
+        pass
     try:                                   # 📜 दिवसभरची मुख्य कारणे — जर्नल
         evs = store.last_events(3)
         if evs:

@@ -22,6 +22,15 @@ store.init_db()
 start_engine()
 start_telegram()
 
+# 🧠 AI ब्रेन — सल्लागार-विश्लेषक (मोफत Ollama → Groq → HF → शांत-स्किप).
+# अपयशावर/बंद असल्यास बॉट तसेच सामान्य — AI हे बोनस, जीवनरेषा नाही.
+try:
+    from ai_brain import start_aibrain
+    start_aibrain()
+    print("✅ AI ब्रेन सुरू (सल्लागार-विश्लेषक)")
+except Exception as _abe:
+    print("⚠️ AI ब्रेन सुरू होऊ शकला नाही (बॉट तसेच चालेल):", repr(_abe))
+
 
 def _market_open():
     n = ist_now()
