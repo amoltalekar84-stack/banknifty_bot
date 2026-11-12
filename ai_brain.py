@@ -10,10 +10,11 @@
   • मराठी वाक्यांची भाषा टेम्पलेटमधून येते; मॉडेल फक्त आकड्यांवर आधारित
     कारणे/लक्षे (JSON) देतो — भाषा 100% नियंत्रित.
   • प्रत्येक कॉल 300से-टाइमआउट + सर्किट-ब्रेकर (लागोपाठ अपयशावर 30 मि थांबा).
-  • लहान-मॉडेल सुरक्षा-जाळी: num_predict 500 (थंड-लोड ~90से + जनरेशन ≈ 255से
-    < 300से-टाइमआउट) + repeat_penalty 1.2 (पोपट-पुनरावृत्ती आटोकास) +
-    प्रॉम्प्ट "लहान वाक्ये" + अर्धवट-JSON बंद-करा-वाचन (_close_partial_json) +
-    पार्स-वेळी शीर्षक/आधीच्या-ओळी जुळणारी पोपट-पुनरावृत्ती काढणे (VM-निदान 2026-11-12).
+  • लहान-मॉडेल सुरक्षा-जाळी: num_predict 400 (थंड-लोड ~90से + जनरेशन ≈ 248से —
+    ~50से मध्ये-देऊ; VM-निरीक्षण: मॉडेल उपलब्ध-जागा भरून काढतो, 500 वर 286से होते)
+    + repeat_penalty 1.2 (पोपट-पुनरावृत्ती आटोकास) + प्रॉम्प्ट "लहान वाक्ये" +
+    अर्धवट-JSON बंद-करा-वाचन (_close_partial_json) + पार्स-वेळी पोपट-काढणे
+    (VM-निदान 2026-11-12).
 
 पर्यावरण (env):
   AI_BRAIN_ENABLED=YES|NO   AI_BRAIN_AT=20:32     AI_MODEL=qwen3:4b
@@ -239,9 +240,10 @@ def _ask_ollama(prompt):
             "messages": [{"role": "user", "content": prompt}],
             "stream": False, "format": "json", "think": False,
             "keep_alive": "15m",
-            # num_predict 500: थंड-सुरुवात (लोड ~90से) + जनरेशन ≈ 255से < 300से;
+            # num_predict 400: थंड-सुरुवात (लोड ~90से) + जनरेशन ≈ 248से — ~50से मध्ये-देऊ
+            # (VM-निरीक्षण: मॉडेल जागा भरतो — 500 वर 286.2से, म्हणून कुंपण = लॅटिन्सी-लीवर);
             # repeat_penalty/last_n: लहान-मॉडेल एकच-वाक्य-पोपटपणा आटोकास
-            "options": {"temperature": 0.2, "num_predict": 500,
+            "options": {"temperature": 0.2, "num_predict": 400,
                         "repeat_penalty": 1.2, "repeat_last_n": 256}}
     try:
         j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
@@ -257,7 +259,7 @@ def _ask_openai_style(url, key, model, prompt):
     """OpenAI-सुसंगत cloud endpoint (Groq / HF router) — फक्त बैकअप."""
     body = {"model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2, "max_tokens": 500,
+            "temperature": 0.2, "max_tokens": 400,
             "response_format": {"type": "json_object"}}
     j = _post_json(url, body, {"Authorization": "Bearer " + key}, C.AI_TIMEOUT)
     ch = (j.get("choices") or [{}])[0]
