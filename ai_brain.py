@@ -10,9 +10,10 @@
   • मराठी वाक्यांची भाषा टेम्पलेटमधून येते; मॉडेल फक्त आकड्यांवर आधारित
     कारणे/लक्षे (JSON) देतो — भाषा 100% नियंत्रित.
   • प्रत्येक कॉल 300से-टाइमआउट + सर्किट-ब्रेकर (लागोपाठ अपयशावर 30 मि थांबा).
-  • लहान-मॉडेल सुरक्षा-जाळी: num_predict 900 + प्रॉम्प्ट "लहान वाक्ये" +
-    अर्धवट (टोकन-तुटलेला) JSON-उत्तर _close_partial_json ने बंद करून वाचन —
-    नाहीतर लांब मराठी वाक्यांमुळे उत्तर 700-टोकन मर्यादेत तुटे (VM-निदान 2026-11-12).
+  • लहान-मॉडेल सुरक्षा-जाळी: num_predict 500 (थंड-लोड ~90से + जनरेशन ≈ 255से
+    < 300से-टाइमआउट) + repeat_penalty 1.2 (पोपट-पुनरावृत्ती आटोकास) +
+    प्रॉम्प्ट "लहान वाक्ये" + अर्धवट-JSON बंद-करा-वाचन (_close_partial_json) +
+    पार्स-वेळी शीर्षक/आधीच्या-ओळी जुळणारी पोपट-पुनरावृत्ती काढणे (VM-निदान 2026-11-12).
 
 पर्यावरण (env):
   AI_BRAIN_ENABLED=YES|NO   AI_BRAIN_AT=20:32     AI_MODEL=qwen3:4b
@@ -197,11 +198,28 @@ def _parse_ai_json(txt):
         out = [_clean(x) for x in v]
         return [x for x in out if x][:cap]
 
+    def _norm(x):
+        return re.sub(r"[^0-9a-z\u0900-\u097F]+", "", str(x or "").lower())
+
+    def _dedup(items, seen):
+        """पोपट-पुनरावृत्ती काढा — शीर्षक/आधीच्या ओळीशी तंतोतंत किंवा
+        पहिल्या 30 अक्षरांपर्यंत जुळणारी वाक्य वगळा (लहान-मॉडेल जबाबदाई)."""
+        out = []
+        for t in items:
+            n = _norm(t)
+            if not n or n[:30] in seen:
+                continue
+            seen.add(n[:30])
+            out.append(t)
+        return out
+
+    head = _clean(j.get("headline"), 140)
+    seen = {_norm(head)[:30]}
     return {"tone": tone,
-            "headline": _clean(j.get("headline"), 140),
-            "causes": _lst(j.get("causes"), 3),
-            "focus": _lst(j.get("focus"), 3),
-            "risk": _lst(j.get("risk"), 2)}
+            "headline": head,
+            "causes": _dedup(_lst(j.get("causes"), 3), seen),
+            "focus": _dedup(_lst(j.get("focus"), 3), seen),
+            "risk": _dedup(_lst(j.get("risk"), 2), seen)}
 
 
 # ----------------------------------------------------------------
@@ -221,7 +239,10 @@ def _ask_ollama(prompt):
             "messages": [{"role": "user", "content": prompt}],
             "stream": False, "format": "json", "think": False,
             "keep_alive": "15m",
-            "options": {"temperature": 0.2, "num_predict": 900}}
+            # num_predict 500: थंड-सुरुवात (लोड ~90से) + जनरेशन ≈ 255से < 300से;
+            # repeat_penalty/last_n: लहान-मॉडेल एकच-वाक्य-पोपटपणा आटोकास
+            "options": {"temperature": 0.2, "num_predict": 500,
+                        "repeat_penalty": 1.2, "repeat_last_n": 256}}
     try:
         j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
                        C.AI_TIMEOUT)
@@ -236,7 +257,7 @@ def _ask_openai_style(url, key, model, prompt):
     """OpenAI-सुसंगत cloud endpoint (Groq / HF router) — फक्त बैकअप."""
     body = {"model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2, "max_tokens": 900,
+            "temperature": 0.2, "max_tokens": 500,
             "response_format": {"type": "json_object"}}
     j = _post_json(url, body, {"Authorization": "Bearer " + key}, C.AI_TIMEOUT)
     ch = (j.get("choices") or [{}])[0]
