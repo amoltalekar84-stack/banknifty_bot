@@ -9,11 +9,14 @@
   • ब्रेन बंद पडला तरी बॉटचे व्यापार आजच्याप्रमाणे — AI हे बोनस, जीवनरेषा नाही.
   • मराठी वाक्यांची भाषा टेम्पलेटमधून येते; मॉडेल फक्त आकड्यांवर आधारित
     कारणे/लक्षे (JSON) देतो — भाषा 100% नियंत्रित.
-  • प्रत्येक कॉल 60से+ टाइमआउट + सर्किट-ब्रेकर (लागोपाठ अपयशावर 30 मि थांबा).
+  • प्रत्येक कॉल 300से-टाइमआउट + सर्किट-ब्रेकर (लागोपाठ अपयशावर 30 मि थांबा).
+  • लहान-मॉडेल सुरक्षा-जाळी: num_predict 900 + प्रॉम्प्ट "लहान वाक्ये" +
+    अर्धवट (टोकन-तुटलेला) JSON-उत्तर _close_partial_json ने बंद करून वाचन —
+    नाहीतर लांब मराठी वाक्यांमुळे उत्तर 700-टोकन मर्यादेत तुटे (VM-निदान 2026-11-12).
 
 पर्यावरण (env):
   AI_BRAIN_ENABLED=YES|NO   AI_BRAIN_AT=20:32     AI_MODEL=qwen3:4b
-  OLLAMA_URL=http://127.0.0.1:11434            AI_TIMEOUT=90
+  OLLAMA_URL=http://127.0.0.1:11434            AI_TIMEOUT=300
   GROQ_API_KEY=... (बैकअप)  AI_CLOUD_MODEL=llama-3.3-70b-versatile
   HF_TOKEN=... (बैकअप)      AI_HF_MODEL=Qwen/Qwen2.5-7B-Instruct
 """
@@ -102,9 +105,10 @@ def _prompt(data):
         "बनवू नका, बाह्य बातमी वापरू नका.\n\n"
         "नियम:\n"
         "1) उत्तर फक्त वैध JSON ऑब्जेक्ट — इतर कोणताही मजकूर नको.\n"
-        "2) सर्व वाक्ये मराठीत, प्रत्येकी एक ओळ, कमाल 140 अक्षरे.\n"
-        "3) causes = आजच्या आकड्यांमधून दिसणारी कारणे (कमाल 3); "
-        "focus = उद्यासाठी लक्षात ठेवायची बाब (कमाल 3); risk = सावधाता-बाब (कमाल 2).\n"
+        "2) सर्व वाक्ये मराठीत, प्रत्येकी एक ओळ, कमाल 80 अक्षरे — लहान व सुटे "
+        "ठेवा; एकच विचार पुन्हा पुन्हा लिहू नका.\n"
+        "3) causes = आजच्या आकड्यांमधून दिसणारी कारणे (कमाल 2); "
+        "focus = उद्यासाठी लक्षात ठेवायची बाब (कमाल 2); risk = सावधाता-बाब (कमाल 1).\n"
         "4) 'कोणता शेअर खरेदी करा/विक्री करा' असा व्यापार-सल्ला देऊ नका — "
         "फक्त वर्तन-विश्लेषण (नियम/धोरण/शिस्त स्तरावर).\n"
         "5) tone = good (नफा/शिस्त) | warn (मिश्र/सावध) | bad (मोठा तोटा/शिस्त-भंग).\n\n"
@@ -121,6 +125,43 @@ def _clean(s, n=160):
     return s[:n]
 
 
+def _close_partial_json(s):
+    """अर्धवट (टोकन-मर्यादेत तुटलेला) JSON शक्य तिथे बंद करा — शेवटची गरज.
+    उघड्या अवतरणांची/कंसांची मोजणी करून पूरक बंद-चिन्हे जोडतो; शेवटचे
+    अपूर्ण तुकडे (अनाथ-की/स्वल्प) काढतो. नंतरही अवैध असल्यास पार्सर None देईल."""
+    stack, in_str, esc = [], False, False
+    for ch in s:
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        elif ch == '"':
+            in_str = True
+        elif ch == "[":
+            stack.append("]")
+        elif ch == "{":
+            stack.append("}")
+        elif ch in "]}" and stack and stack[-1] == ch:
+            stack.pop()
+    out = s
+    if in_str:
+        if esc:
+            out = out[:-1]             # अर्धवट backslash-पलायन काढा
+        out += '"'
+    out = out.rstrip()
+    for _ in range(3):                 # शेवटचे अपूर्ण तुकडे काढा
+        if out.endswith(":"):
+            out = re.sub(r'"[^"]*"\s*$', "", out[:-1]).rstrip()
+        elif out.endswith(","):
+            out = out[:-1].rstrip()
+        else:
+            break
+    return out + "".join(reversed(stack))
+
+
 def _parse_ai_json(txt):
     """मॉडेल उत्तर → स्कीमा-पाळलेला dict, नाहीतर None (कधीही बनावट आकडे नाहीत)."""
     if not txt:
@@ -132,12 +173,18 @@ def _parse_ai_json(txt):
         if m:
             s = m[0]
     a, b = s.find("{"), s.rfind("}")
-    if a < 0 or b <= a:
+    if a < 0:
         return None
+    frag = s[a:b + 1] if b > a else s[a:]      # अर्धवट → शेवटपर्यंतचा तुकडा
     try:
-        j = json.loads(s[a:b + 1])
+        j = json.loads(frag)
     except (ValueError, TypeError):
-        return None
+        j = None
+    if not isinstance(j, dict):
+        try:   # टोकन-मर्यादेत तुटलेला उत्तर — बंद करून शक्य तिथे वाचा
+            j = json.loads(_close_partial_json(frag))
+        except (ValueError, TypeError):
+            return None            # कचरा → None (कधीही बनावट नाही)
     if not isinstance(j, dict) or "headline" not in j:
         return None                # किमान आवश्यक: headline; बाकी की ऐच्छिक (लवचिक)
     tone = str(j.get("tone") or "").strip().lower()
@@ -174,7 +221,7 @@ def _ask_ollama(prompt):
             "messages": [{"role": "user", "content": prompt}],
             "stream": False, "format": "json", "think": False,
             "keep_alive": "15m",
-            "options": {"temperature": 0.2, "num_predict": 700}}
+            "options": {"temperature": 0.2, "num_predict": 900}}
     try:
         j = _post_json(C.OLLAMA_URL.rstrip("/") + "/api/chat", body, {},
                        C.AI_TIMEOUT)
@@ -189,7 +236,7 @@ def _ask_openai_style(url, key, model, prompt):
     """OpenAI-सुसंगत cloud endpoint (Groq / HF router) — फक्त बैकअप."""
     body = {"model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2, "max_tokens": 700,
+            "temperature": 0.2, "max_tokens": 900,
             "response_format": {"type": "json_object"}}
     j = _post_json(url, body, {"Authorization": "Bearer " + key}, C.AI_TIMEOUT)
     ch = (j.get("choices") or [{}])[0]
